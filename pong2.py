@@ -16,6 +16,8 @@ import random
 #make that each round adds 5 points to total score
 #add a pause system
 
+# additional task: every time someone wins he gets a ball speed boost
+
 paddle_colors=["white", "pink", "cyan", "yellow"]
 bg_colors=["black", "gray", "blue", "green"]
 
@@ -35,7 +37,6 @@ BALL_RADIUS = 8
 
 SCORE_FONT = pygame.font.SysFont("comicsans", 50)
 WINNING_SCORE = 10
-
 
 
 
@@ -65,7 +66,7 @@ class Paddle:
 
 
 class Ball:
-    MAX_VEL = 2
+    MAX_VEL = 5
     COLOR = PADDLE_COLOR
 
     def __init__(self, x, y, radius):
@@ -111,14 +112,17 @@ def draw(win, paddles, ball, left_score, right_score):
 
 
 def handle_collision(ball, left_paddle, right_paddle):
+    
     pygame.mixer.init()
+
+    pong_sound=pygame.mixer.Sound("click_x.wav")
     
     if ball.y + ball.radius >= HEIGHT:
         ball.y_vel *= -1
-        # pygame.mixer.Sound(file="C:\Users\Daesun\Downloads\soundeffect.mp3").play()
+        pong_sound.play()
     elif ball.y - ball.radius <= 0:
         ball.y_vel *= -1
-        # pygame.mixer.Sound(file="C:\Users\Daesun\Downloads\soundeffect.mp3").play()
+        pong_sound.play()
 
     if ball.x_vel < 0:
         if ball.y >= left_paddle.y and ball.y <= left_paddle.y + left_paddle.height:
