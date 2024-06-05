@@ -11,6 +11,11 @@ import random
 # blue=("90", "124", "218")
 # green=("90", "235", "104")
 
+#set the speed of the ball to 2 pixels per frame
+#play a sound when the ball hits the paddle
+#make that each round adds 5 points to total score
+#add a pause system
+
 paddle_colors=["white", "pink", "cyan", "yellow"]
 bg_colors=["black", "gray", "blue", "green"]
 
@@ -30,6 +35,8 @@ BALL_RADIUS = 8
 
 SCORE_FONT = pygame.font.SysFont("comicsans", 50)
 WINNING_SCORE = 10
+
+
 
 
 class Paddle:
@@ -58,7 +65,7 @@ class Paddle:
 
 
 class Ball:
-    MAX_VEL = 5
+    MAX_VEL = 2
     COLOR = PADDLE_COLOR
 
     def __init__(self, x, y, radius):
@@ -104,10 +111,14 @@ def draw(win, paddles, ball, left_score, right_score):
 
 
 def handle_collision(ball, left_paddle, right_paddle):
+    pygame.mixer.init()
+    
     if ball.y + ball.radius >= HEIGHT:
         ball.y_vel *= -1
+        # pygame.mixer.Sound(file="C:\Users\Daesun\Downloads\soundeffect.mp3").play()
     elif ball.y - ball.radius <= 0:
         ball.y_vel *= -1
+        # pygame.mixer.Sound(file="C:\Users\Daesun\Downloads\soundeffect.mp3").play()
 
     if ball.x_vel < 0:
         if ball.y >= left_paddle.y and ball.y <= left_paddle.y + left_paddle.height:
@@ -142,12 +153,18 @@ def handle_paddle_movement(keys, left_paddle, right_paddle):
         right_paddle.move(up=True)
     if keys[pygame.K_DOWN] and right_paddle.y + right_paddle.VEL + right_paddle.height <= HEIGHT:
         right_paddle.move(up=False)
+        
+def pause():
+    time=pygame.key.get_pressed()
+    if time[pygame.K_p]:
+        pygame.time.delay(5000)
+
 
 
 def main():
     run = True
     clock = pygame.time.Clock()
-
+    
     left_paddle = Paddle(10, HEIGHT//2 - PADDLE_HEIGHT //
                          2, PADDLE_WIDTH, PADDLE_HEIGHT)
     right_paddle = Paddle(WIDTH - 10 - PADDLE_WIDTH, HEIGHT //
@@ -157,7 +174,12 @@ def main():
     left_score = 0
     right_score = 0
 
+    WINNING_SCORE=10
+    
+
+
     while run:
+
         clock.tick(FPS)
         draw(WIN, [left_paddle, right_paddle], ball, left_score, right_score)
 
@@ -198,6 +220,8 @@ def main():
             right_paddle.reset()
             left_score = 0
             right_score = 0
+            WINNING_SCORE+=5
+            Ball.MAX_VEL +=2
 
     pygame.quit()
 
