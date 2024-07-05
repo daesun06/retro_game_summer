@@ -38,7 +38,7 @@ BALL_RADIUS = 8
 SCORE_FONT = pygame.font.SysFont("comicsans", 50)
 WINNING_SCORE = 10
 
-
+paused = False
 
 class Paddle:
     COLOR = PADDLE_COLOR
@@ -115,7 +115,7 @@ def handle_collision(ball, left_paddle, right_paddle):
     
     pygame.mixer.init()
 
-    pong_sound=pygame.mixer.Sound("click_x.wav")
+    pong_sound=pygame.mixer.Sound("soundeffect.mp3")
     
     if ball.y + ball.radius >= HEIGHT:
         ball.y_vel *= -1
@@ -134,6 +134,7 @@ def handle_collision(ball, left_paddle, right_paddle):
                 reduction_factor = (left_paddle.height / 2) / ball.MAX_VEL
                 y_vel = difference_in_y / reduction_factor
                 ball.y_vel = -1 * y_vel
+                pong_sound.play()
 
     else:
         if ball.y >= right_paddle.y and ball.y <= right_paddle.y + right_paddle.height:
@@ -145,28 +146,33 @@ def handle_collision(ball, left_paddle, right_paddle):
                 reduction_factor = (right_paddle.height / 2) / ball.MAX_VEL
                 y_vel = difference_in_y / reduction_factor
                 ball.y_vel = -1 * y_vel
+                pong_sound.play()
 
 
 def handle_paddle_movement(keys, left_paddle, right_paddle):
-    if keys[pygame.K_w] and left_paddle.y - left_paddle.VEL >= 0:
-        left_paddle.move(up=True)
-    if keys[pygame.K_s] and left_paddle.y + left_paddle.VEL + left_paddle.height <= HEIGHT:
-        left_paddle.move(up=False)
 
-    if keys[pygame.K_UP] and right_paddle.y - right_paddle.VEL >= 0:
-        right_paddle.move(up=True)
-    if keys[pygame.K_DOWN] and right_paddle.y + right_paddle.VEL + right_paddle.height <= HEIGHT:
-        right_paddle.move(up=False)
+    global paused 
+    if keys[pygame.K_p]: 
+        paused = not paused
+    
+    else:
+        if keys[pygame.K_w] and left_paddle.y - left_paddle.VEL >= 0:
+            left_paddle.move(up=True)
+        if keys[pygame.K_s] and left_paddle.y + left_paddle.VEL + left_paddle.height <= HEIGHT:
+            left_paddle.move(up=False)
+
+        if keys[pygame.K_UP] and right_paddle.y - right_paddle.VEL >= 0:
+            right_paddle.move(up=True)
+        if keys[pygame.K_DOWN] and right_paddle.y + right_paddle.VEL + right_paddle.height <= HEIGHT:
+            right_paddle.move(up=False)
         
-def pause():
-    time=pygame.key.get_pressed()
-    if time[pygame.K_p]:
-        pygame.time.delay(5000)
+
 
 
 
 def main():
     run = True
+    
     clock = pygame.time.Clock()
     
     left_paddle = Paddle(10, HEIGHT//2 - PADDLE_HEIGHT //
@@ -194,6 +200,8 @@ def main():
 
         keys = pygame.key.get_pressed()
         handle_paddle_movement(keys, left_paddle, right_paddle)
+        if paused:
+            continue
 
         ball.move()
         handle_collision(ball, left_paddle, right_paddle)
@@ -225,7 +233,7 @@ def main():
             left_score = 0
             right_score = 0
             WINNING_SCORE+=5
-            Ball.MAX_VEL +=2
+
 
     pygame.quit()
 
