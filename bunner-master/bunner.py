@@ -1,5 +1,6 @@
 # If the window is too tall to fit on the screen, check your operating system display settings and reduce display
 # scaling if it is enabled.
+import pgzero.clock
 import pgzero, pgzrun, pygame, sys
 from random import *
 from enum import Enum
@@ -117,6 +118,8 @@ class Bunner(MyActor):
 
                 # No need to continue searching
                 return
+            
+    
 
     def update(self):
         # Check each control direction
@@ -132,14 +135,56 @@ class Bunner(MyActor):
             if self.timer == 0 and len(self.input_queue) > 0:
                 # Take the next input off the queue and process it
                 self.handle_input(self.input_queue.pop(0))
+                
+            while self.state == PlayerState.ALIVE:
+                if current_row == Grass:
+                    self.direction = 0
+                    import time
+                    time.sleep(5.0)
+                    # pgzero.clock.schedule_interval(1.0, 2.0)
+                    
+                if current_row == Road: 
+                    if Car.dx == 1: # and distance from a car to player is < 10
+                        self.direction = 3
+                    else:
+                        self.direction = 1
+                        
+                if current_row == Rail:
+                    time.sleep(3.0)
+                    self.direction = 0
+                    
+                if current_row == Water:
+                    if Log.dx == 1: # and distance from a log to player is < 10
+                        self.direction = 3
+                    else:
+                        self.direction = 1
+                    
+                if current_row == Pavement:
+                    # if distance from a hedge to player < 10 and the hedge is on right
+                    #    self.direction = 3
+                    # else:
+                    #    self.direction = 1
+                    
+                    import random
+                    
+                    dir = random.randint(1, 2)
+                    if dir == 1:
+                        self.direction = 3
+                    else:
+                        self.direction = 1
+                    
+                    
 
             land = False
             if self.timer > 0:
                 # Apply movement
                 self.x += DX[self.direction]
                 self.y += DY[self.direction]
+                time.sleep(1.0)
                 self.timer -= 1
                 land = self.timer == 0      # If timer reaches zero, we've just landed
+                
+
 
             current_row = None
             for row in game.rows:
