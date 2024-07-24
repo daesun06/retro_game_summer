@@ -120,7 +120,6 @@ class Bunner(MyActor):
                 return
     
     def _ai_decide(self, current_row):
-        direction = 0
         if isinstance(current_row, Grass):
             direction = 0
             
@@ -128,26 +127,31 @@ class Bunner(MyActor):
            # 1. Check if there are cars on the row 
            # 2. check if distance from a car to player is safe if yes move forward
            # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
-            if current_row.dx == 1: # and distance from a car to player is < 10
+            if current_row.dx == 1 and (abs(current_row.x-self.x) + abs(current_row.y-self.y)) < 10 : 
                 direction = 3
-            else:
+            elif current_row.dx == 3 and (abs(current_row.x-self.x) + abs(current_row.y-self.y)) < 10:
                 direction = 1
+            else:
+                direction = 0
                 
         if isinstance(current_row, Rail):
             direction = 0
             
         if isinstance(current_row, Water):
-            if current_row.dx == 1: # and distance from a log to player is < 10
+            if current_row.x-self.x < 10: 
+                direction = 0
+            elif current_row.dx == 1 and 10 < current_row.x - self.x < 20:
                 direction = 3
-            else:
+            elif current_row.dx == 3 and 10 < current_row.x - self.x < 20:
                 direction = 1
+            else:
+                None
             
         if isinstance(current_row, Pavement):
-            dir = random.randint(1, 2)
-            if dir == 1:
-                direction = 3
-            else:
-                direction = 1
+            direction = 0
+            
+        if isinstance(current_row, Dirt):
+            direction = 0
 
         return direction
     
@@ -364,61 +368,61 @@ class Hedge(MyActor):
     def __init__(self, x, y, pos):
         super().__init__("bush"+str(x)+str(y), pos)
 
-def generate_hedge_mask():
-    # In this context, a mask is a series of boolean values which allow or prevent parts of an underlying image from showing through.
-    # This function creates a mask representing the presence or absence of hedges in a Grass row. False means a hedge
-    # is present, True represents a gap. Initially we create a list of 12 elements. For each element there is a small
-    # chance of a gap, but normally all element will be False, representing a hedge. We then randomly set one item to
-    # True, to ensure that there is always at least one gap that the player can get through
-    mask = [random() < 0.01 for i in range(12)]
-    mask[randint(0, 11)] = True # force there to be one gap
+# def generate_hedge_mask():
+#     # In this context, a mask is a series of boolean values which allow or prevent parts of an underlying image from showing through.
+#     # This function creates a mask representing the presence or absence of hedges in a Grass row. False means a hedge
+#     # is present, True represents a gap. Initially we create a list of 12 elements. For each element there is a small
+#     # chance of a gap, but normally all element will be False, representing a hedge. We then randomly set one item to
+#     # True, to ensure that there is always at least one gap that the player can get through
+#     mask = [random() < 0.01 for i in range(12)]
+#     mask[randint(0, 11)] = True # force there to be one gap
 
-    # We then widen gaps to a minimum of 3 tiles. This happens in two steps.
-    # First, we recreate the mask list, except this time whether a gap is present is based on whether there was a gap
-    # in either the original element or its neighbouring elements. When using Python's built-in sum function, a value
-    # of True is treated as 1 and False as 0. We must use the min/max functions to ensure that we don't try to look
-    # at a neighbouring element which doesn't exist (e.g. there is no neighbour to the right of the last element)
-    mask = [sum(mask[max(0, i-1):min(12, i+2)]) > 0 for i in range(12)]
+#     # We then widen gaps to a minimum of 3 tiles. This happens in two steps.
+#     # First, we recreate the mask list, except this time whether a gap is present is based on whether there was a gap
+#     # in either the original element or its neighbouring elements. When using Python's built-in sum function, a value
+#     # of True is treated as 1 and False as 0. We must use the min/max functions to ensure that we don't try to look
+#     # at a neighbouring element which doesn't exist (e.g. there is no neighbour to the right of the last element)
+#     mask = [sum(mask[max(0, i-1):min(12, i+2)]) > 0 for i in range(12)]
 
-    # We want to ensure gaps are a minimum of 3 tiles wide, but the previous line only ensures a minimum gap of 2 tiles
-    # at the edges. The last step is to return a new list consisting of the old list with the first and last elements duplicated
-    return [mask[0]] + mask + 2 * [mask[-1]]
+#     # We want to ensure gaps are a minimum of 3 tiles wide, but the previous line only ensures a minimum gap of 2 tiles
+#     # at the edges. The last step is to return a new list consisting of the old list with the first and last elements duplicated
+#     return [mask[0]] + mask + 2 * [mask[-1]]
 
-def classify_hedge_segment(mask, previous_mid_segment):
-    # This function helps determine which sprite should be used by a particular hedge segment. Hedge sprites are numbered
-    # 00, 01, 10, 11, 20, 21 - up to 51. The second number indicates whether it's a bottom (0) or top (1) segment,
-    # but this method is concerned only with the first number. 0 represents a single-tile-width hedge. 1 and 2 represent
-    # the left-most or right-most sprites in a multi-tile-width hedge. 3, 4 and 5 all represent middle pieces in hedges
-    # which are 3 or more tiles wide.
+# def classify_hedge_segment(mask, previous_mid_segment):
+#     # This function helps determine which sprite should be used by a particular hedge segment. Hedge sprites are numbered
+#     # 00, 01, 10, 11, 20, 21 - up to 51. The second number indicates whether it's a bottom (0) or top (1) segment,
+#     # but this method is concerned only with the first number. 0 represents a single-tile-width hedge. 1 and 2 represent
+#     # the left-most or right-most sprites in a multi-tile-width hedge. 3, 4 and 5 all represent middle pieces in hedges
+#     # which are 3 or more tiles wide.
 
-    # mask is a list of 4 boolean values - a slice from the list generated by generate_hedge_mask. True represents a gap
-    # and False represents a hedge. mask[1] is the item we're currently looking at.
-    if mask[1]:
-        # mask[1] == True represents a gap, so there will be no hedge sprite at this location
-        sprite_x = None
-    else:
-        # There's a hedge here - need to check either side of it to see if it's a single-width, left-most, right-most
-        # or middle piece. The calculation generates a number from 0 to 3 accordingly. Note that when boolean values
-        # are used in arithmetic in Python, False is treated as being 0 and True as 1.
-        sprite_x = 3 - 2 * mask[0] - mask[2]
+#     # mask is a list of 4 boolean values - a slice from the list generated by generate_hedge_mask. True represents a gap
+#     # and False represents a hedge. mask[1] is the item we're currently looking at.
+#     if mask[1]:
+#         # mask[1] == True represents a gap, so there will be no hedge sprite at this location
+#         sprite_x = None
+#     else:
+#         # There's a hedge here - need to check either side of it to see if it's a single-width, left-most, right-most
+#         # or middle piece. The calculation generates a number from 0 to 3 accordingly. Note that when boolean values
+#         # are used in arithmetic in Python, False is treated as being 0 and True as 1.
+#         sprite_x = 3 - 2 * mask[0] - mask[2]
 
-    if sprite_x == 3:
-        # If this is a middle piece, to ensure the piece tiles correctly, we alternate between sprites 3 and 4.
-        # If the next piece is going to be the last of this hedge section (sprite 2), we need to make sure that sprite 3
-        # does not precede it, as the two do not tile together correctly. In this case we should use sprite 5.
-        # mask[3] tells us whether there's a gap 2 tiles to the right - which means the next tile will be sprite 2
-        if previous_mid_segment == 4 and mask[3]:
-            return 5, None
-        else:
-            # Alternate between 3 and 4
-            if previous_mid_segment == None or previous_mid_segment == 4:
-                sprite_x = 3
-            elif previous_mid_segment == 3:
-                sprite_x = 4
-            return sprite_x, sprite_x
-    else:
-        # Not a middle piece
-        return sprite_x, None
+#     if sprite_x == 3:
+#         # If this is a middle piece, to ensure the piece tiles correctly, we alternate between sprites 3 and 4.
+#         # If the next piece is going to be the last of this hedge section (sprite 2), we need to make sure that sprite 3
+#         # does not precede it, as the two do not tile together correctly. In this case we should use sprite 5.
+#         # mask[3] tells us whether there's a gap 2 tiles to the right - which means the next tile will be sprite 2
+#         if previous_mid_segment == 4 and mask[3]:
+#             return 5, None
+#         else:
+#             # Alternate between 3 and 4
+#             if previous_mid_segment == None or previous_mid_segment == 4:
+#                 sprite_x = 3
+#             elif previous_mid_segment == 3:
+#                 sprite_x = 4
+#             return sprite_x, sprite_x
+#     else:
+#         # Not a middle piece
+#         return sprite_x, None
 
 class Grass(Row):
     def __init__(self, predecessor, index, y):
@@ -430,27 +434,27 @@ class Grass(Row):
         # in the hedges. Hedges are two rows high - once hedges have been created on a row, the pattern will be
         # duplicated on the next row (although the sprites will be different - e.g. there are separate sprites
         # for the top-left and bottom-left corners of a hedge). Note that the upper sprites overlap with the row above.
-        self.hedge_row_index = None     # 0 or 1, or None if no hedges on this row
-        self.hedge_mask = None
+        # self.hedge_row_index = None     # 0 or 1, or None if no hedges on this row
+        # self.hedge_mask = None
 
-        if not isinstance(predecessor, Grass) or predecessor.hedge_row_index == None:
-            # Create a brand-new set of hedges? We will only create hedges if the previous row didn't have any.
-            # We also only want hedges to appear on certain types of grass row, and on only a random selection
-            # of rows
-            if random() < 0.5 and index > 7 and index < 14:
-                self.hedge_mask = generate_hedge_mask()
-                self.hedge_row_index = 0
-        elif predecessor.hedge_row_index == 0:
-            self.hedge_mask = predecessor.hedge_mask
-            self.hedge_row_index = 1
+        # if not isinstance(predecessor, Grass) or predecessor.hedge_row_index == None:
+        #     # Create a brand-new set of hedges? We will only create hedges if the previous row didn't have any.
+        #     # We also only want hedges to appear on certain types of grass row, and on only a random selection
+        #     # of rows
+        #     if random() < 0.5 and index > 7 and index < 14:
+        #         self.hedge_mask = generate_hedge_mask()
+        #         self.hedge_row_index = 0
+        # elif predecessor.hedge_row_index == 0:
+        #     self.hedge_mask = predecessor.hedge_mask
+        #     self.hedge_row_index = 1
 
-        if self.hedge_row_index != None:
-            # See comments in classify_hedge_segment for explanation of previous_mid_segment
-            previous_mid_segment = None
-            for i in range(1, 13):
-                sprite_x, previous_mid_segment = classify_hedge_segment(self.hedge_mask[i - 1:i + 3], previous_mid_segment)
-                if sprite_x != None:
-                    self.children.append(Hedge(sprite_x, self.hedge_row_index, (i * 40 - 20, 0)))
+        # if self.hedge_row_index != None:
+        #     # See comments in classify_hedge_segment for explanation of previous_mid_segment
+        #     previous_mid_segment = None
+        #     for i in range(1, 13):
+        #         sprite_x, previous_mid_segment = classify_hedge_segment(self.hedge_mask[i - 1:i + 3], previous_mid_segment)
+        #         if sprite_x != None:
+        #             self.children.append(Hedge(sprite_x, self.hedge_row_index, (i * 40 - 20, 0)))
 
     def allow_movement(self, x):
         # allow_movement in the base class ensures that the player can't walk off the left and right sides of the
