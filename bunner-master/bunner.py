@@ -119,7 +119,7 @@ class Bunner(MyActor):
                 # No need to continue searching
                 return
     
-    def _ai_decide(self, current_row):
+    def _ai_decide(self, current_row, next_row):
         if isinstance(current_row, Grass):
             direction = 0
             
@@ -162,15 +162,19 @@ class Bunner(MyActor):
             # the ground. If it's above zero, they're currently jumping to a new location.
 
             current_row = None
-            for row in game.rows:
+            next_row = None
+            for index in range(len(game.rows)):
+                row = game.rows[index]
                 if row.y == self.y:
                     current_row = row
+                    if index + 1 < len(game.rows):
+                        next_row = game.rows[index + 1]
                     break
 
             # Are we on the ground, and are there inputs to process?
             if self.timer == 0:
                 # Take the next input off the queue and process it
-                self.handle_input(self._ai_decide(current_row))        
+                self.handle_input(self._ai_decide(current_row, next_row))        
 
             land = False
             if self.timer > 0:
