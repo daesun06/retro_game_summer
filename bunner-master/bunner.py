@@ -122,19 +122,25 @@ class Bunner(MyActor):
     def _ai_decide(self, current_row, next_row):
         if isinstance(current_row, Grass):
             direction = 0
+        
+        if isinstance(next_row, Grass):
+            direction = 0
             
-        if isinstance(current_row, Road): 
+        if isinstance(next_row, Road): 
            # 1. Check if there are cars on the row 
            # 2. check if distance from a car to player is safe if yes move forward
            # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
-            if current_row.dx == 1 and (abs(current_row.x-self.x) + abs(current_row.y-self.y)) < 10 : 
+            if next_row.dx == 1 and (abs(next_row.x-self.x) + abs(next_row.y-self.y)) < 10 : 
                 direction = 3
-            elif current_row.dx == 3 and (abs(current_row.x-self.x) + abs(current_row.y-self.y)) < 10:
+            elif next_row.dx == 3 and (abs(next_row.x-self.x) + abs(next_row.y-self.y)) < 10:
                 direction = 1
             else:
                 direction = 0
                 
         if isinstance(current_row, Rail):
+            direction = 0
+            
+        if isinstance(next_row, Rail):
             direction = 0
             
         if isinstance(current_row, Water):
@@ -147,16 +153,22 @@ class Bunner(MyActor):
             else:
                 None
             
-        if isinstance(current_row, Pavement):
+        if isinstance(current_row, Pavement) or isinstance(next_row, Pavement):
             direction = 0
             
-        if isinstance(current_row, Dirt):
+        if isinstance(current_row, Dirt) or isinstance(next_row, Dirt):
             direction = 0
 
         return direction
     
 
     def update(self):
+        
+        for direction in range(4):
+            if key_just_pressed(direction_keys[direction]):
+                self.input_queue.append(direction)
+        
+        
         if self.state == PlayerState.ALIVE:
             # While the player is alive, the timer variable is used for movement. If it's zero, the player is on
             # the ground. If it's above zero, they're currently jumping to a new location.
@@ -172,9 +184,18 @@ class Bunner(MyActor):
                     break
 
             # Are we on the ground, and are there inputs to process?
-            if self.timer == 0:
-                # Take the next input off the queue and process it
-                self.handle_input(self._ai_decide(current_row, next_row))        
+            
+            if state == State.MANUAL:
+            
+                if self.timer == 0 and len(self.input_queue) > 0:
+                    # Take the next input off the queue and process it
+                    self.handle_input(self.input_queue.pop(0))
+            
+            if state == State.AUTO:
+            
+                if self.timer == 0:
+                    # Take the next input off the queue and process it
+                    self.handle_input(self._ai_decide(current_row, next_row))        
 
             land = False
             if self.timer > 0:
@@ -864,20 +885,24 @@ def display_number(n, colour, x, align):
 
 class State(Enum):
     MENU = 1
-    PLAY = 2
+    MANUAL = 2
     GAME_OVER = 3
+    AUTO = 4
 
 def update():
     global state, game, high_score
 
     if state == State.MENU:
         if key_just_pressed(keys.SPACE):
-            state = State.PLAY
+            state = State.MANUAL
+            game = Game(Bunner((240, -320)))
+        elif key_just_pressed(keys.A):
+            state = State.AUTO
             game = Game(Bunner((240, -320)))
         else:
             game.update()
 
-    elif state == State.PLAY:
+    elif state == State.MANUAL or state == State.AUTO:
         # Is it game over?
         if game.bunner.state != PlayerState.ALIVE and game.bunner.timer < 0:
             # Update high score
@@ -908,8 +933,10 @@ def draw():
     if state == State.MENU:
         screen.blit("title", (0, 0))
         screen.blit("start" + str([0, 1, 2, 1][game.scroll_pos // 6 % 4]), ((WIDTH - 270) // 2, HEIGHT - 240))
+        screen.draw.text("PRESS A FOR AUTO MODE", ((WIDTH - 225) // 2, HEIGHT - 170))
+        
 
-    elif state == State.PLAY:
+    elif state == State.MANUAL or state == State.AUTO:
         # Display score and high score
         display_number(game.score(), 0, 0, 0)
         display_number(high_score, 1, WIDTH - 10, 1)
