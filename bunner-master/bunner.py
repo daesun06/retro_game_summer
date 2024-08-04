@@ -74,14 +74,15 @@ DIRECTION_UP = 0
 DIRECTION_RIGHT = 1
 DIRECTION_DOWN = 2
 DIRECTION_LEFT = 3
+DIRECTION_WAIT = 4
 
 direction_keys = [keys.UP, keys.RIGHT, keys.DOWN, keys.LEFT]
 
 # X and Y directions indexed into by in_edge and out_edge in Segment
 # The indices correspond to the direction numbers above, i.e. 0 = up, 1 = right, 2 = down, 3 = left
 # Numbers 0 to 3 correspond to up, right, down, left
-DX = [0,4,0,-4]
-DY = [-4,0,4,0]
+DX = [0,4,0,-4, 0]
+DY = [-4,0,4,0, 0]
 
 class Bunner(MyActor):
     MOVE_DISTANCE = 10
@@ -120,6 +121,14 @@ class Bunner(MyActor):
                 return
     
     def _ai_decide(self, current_row, next_row):
+        
+        for rowindex in range(len(next_row.children)):
+            object_pos = next_row.children[rowindex].pos
+            object_x = object_pos[0]
+            object_y = object_pos[1]
+            
+        
+        
         if isinstance(current_row, Grass):
             direction = 0
         
@@ -130,12 +139,12 @@ class Bunner(MyActor):
            # 1. Check if there are cars on the row 
            # 2. check if distance from a car to player is safe if yes move forward
            # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
-            if next_row.dx == 1 and (abs(next_row.x-self.x) + abs(next_row.y-self.y)) < 10 : 
+            if next_row.dx == 1 and abs(self.x - object_x) < 20 : 
                 direction = 3
-            elif next_row.dx == 3 and (abs(next_row.x-self.x) + abs(next_row.y-self.y)) < 10:
+            elif next_row.dx == 3 and abs(self.x - object_x) < 20:
                 direction = 1
             else:
-                direction = 0
+                direction = 4
                 
         if isinstance(current_row, Rail):
             direction = 0
@@ -144,16 +153,20 @@ class Bunner(MyActor):
             direction = 0
             
         if isinstance(current_row, Water):
-            if current_row.x-self.x < 10: 
+            if object_x < 10: 
                 direction = 0
-            elif current_row.dx == 1 and 10 < current_row.x - self.x < 20:
+            elif current_row.dx == 1 and 10 < abs(object_x - self.x) < 25:
                 direction = 3
-            elif current_row.dx == 3 and 10 < current_row.x - self.x < 20:
+            elif current_row.dx == 3 and 10 < abs(object_x - self.x) < 25:
                 direction = 1
             else:
-                None
+                direction = 4
+                
             
-        if isinstance(current_row, Pavement) or isinstance(next_row, Pavement):
+        if isinstance(current_row, Pavement):
+            direction = 0
+            
+        if isinstance(next_row, Pavement):
             direction = 0
             
         if isinstance(current_row, Dirt) or isinstance(next_row, Dirt):
