@@ -74,14 +74,15 @@ DIRECTION_UP = 0
 DIRECTION_RIGHT = 1
 DIRECTION_DOWN = 2
 DIRECTION_LEFT = 3
+DIRECTION_WAIT = 4
 
 direction_keys = [keys.UP, keys.RIGHT, keys.DOWN, keys.LEFT]
 
 # X and Y directions indexed into by in_edge and out_edge in Segment
 # The indices correspond to the direction numbers above, i.e. 0 = up, 1 = right, 2 = down, 3 = left
 # Numbers 0 to 3 correspond to up, right, down, left
-DX = [0,4,0,-4]
-DY = [-4,0,4,0]
+DX = [0,4,0,-4, 0]
+DY = [-4,0,4,0, 0]
 
 class Bunner(MyActor):
     MOVE_DISTANCE = 10
@@ -120,43 +121,78 @@ class Bunner(MyActor):
                 return
     
     def _ai_decide(self, current_row, next_row):
-        if isinstance(current_row, Grass):
+        
+        
+            
+        
+                  
+        
+        if isinstance(next_row, Grass):
             direction = 0
             
-        if isinstance(current_row, Road): 
+        if isinstance(next_row, Road): 
            # 1. Check if there are cars on the row 
            # 2. check if distance from a car to player is safe if yes move forward
            # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
-            if current_row.dx == 1 and (abs(current_row.x-self.x) + abs(current_row.y-self.y)) < 10 : 
-                direction = 3
-            elif current_row.dx == 3 and (abs(current_row.x-self.x) + abs(current_row.y-self.y)) < 10:
-                direction = 1
-            else:
-                direction = 0
+            
+            for rowindex in range(len(next_row.children)):
+                object_pos = next_row.children[rowindex].pos
+                object_x = object_pos[0]
+            
+                if abs(self.x - object_x) > 50:
+                    direction = 0
+                elif next_row.children[rowindex].dx == 1 and abs(self.x - object_x) < 50 : 
+                    direction = 3
+                elif next_row.children[rowindex].dx == 3 and abs(self.x - object_x) < 50 :
+                    direction = 1
+                else:
+                    direction = 4
+                    
+            for currentrowindex in range(len(current_row.children)):
+                current_object_pos = current_row.children[currentrowindex].pos
+                current_object_x = current_object_pos[0]
                 
-        if isinstance(current_row, Rail):
-            direction = 0
+                if abs(self.x - current_object_x) < 50:
+                    if current_row.children[currentrowindex].dx == 1:
+                        direction = 3
+                    if current_row.children[currentrowindex].dx == 3:
+                        direction = 1                           
+                
             
-        if isinstance(current_row, Water):
-            if current_row.x-self.x < 10: 
-                direction = 0
-            elif current_row.dx == 1 and 10 < current_row.x - self.x < 20:
-                direction = 3
-            elif current_row.dx == 3 and 10 < current_row.x - self.x < 20:
-                direction = 1
+        if isinstance(next_row, Rail):
+            if next_row.train_incoming == True:
+                direction = 4
             else:
-                None
+                direction = 0
             
-        if isinstance(current_row, Pavement):
+            
+        # if isinstance(current_row, Water):
+        #     if abs(self.x - object_x) < 5: 
+        #         direction = 0
+        #     elif current_row.children[rowindex].dx == 1 and abs(self.x - object_x) < 5:
+        #         direction = 3
+        #     elif current_row.children[rowindex].dx == 3 and abs(self.x - object_x) < 5:
+        #         direction = 1
+        #     else:
+        #         direction = 4
+                
+            
+        if isinstance(next_row, Pavement):
             direction = 0
             
-        if isinstance(current_row, Dirt):
+        if isinstance(next_row, Dirt):
             direction = 0
 
         return direction
     
 
     def update(self):
+        
+        for direction in range(4):
+            if key_just_pressed(direction_keys[direction]):
+                self.input_queue.append(direction)
+        
+        
         if self.state == PlayerState.ALIVE:
             # While the player is alive, the timer variable is used for movement. If it's zero, the player is on
             # the ground. If it's above zero, they're currently jumping to a new location.
@@ -172,9 +208,18 @@ class Bunner(MyActor):
                     break
 
             # Are we on the ground, and are there inputs to process?
-            if self.timer == 0:
-                # Take the next input off the queue and process it
-                self.handle_input(self._ai_decide(current_row, next_row))        
+            
+            if state == State.MANUAL:
+            
+                if self.timer == 0 and len(self.input_queue) > 0:
+                    # Take the next input off the queue and process it
+                    self.handle_input(self.input_queue.pop(0))
+            
+            if state == State.AUTO:
+            
+                if self.timer == 0:
+                    # Take the next input off the queue and process it
+                    self.handle_input(self._ai_decide(current_row, next_row))        
 
             land = False
             if self.timer > 0:
@@ -479,7 +524,7 @@ class Grass(Row):
         elif self.index >= 8 and self.index <= 14:
             row_class, index = Grass, self.index + 1
         else:
-            row_class, index = choice((Road, Water)), 0
+            row_class, index = choice((Road, )), 0 # Water
 
         # Create an object of the chosen row class
         return row_class(self, index, self.y - ROW_HEIGHT)
@@ -501,67 +546,67 @@ class Dirt(Row):
         elif self.index >= 8 and self.index <= 14:
             row_class, index = Dirt, self.index + 1
         else:
-            row_class, index = choice((Road, Water)), 0
+            row_class, index = choice((Road, )), 0 # Water
 
         # Create an object of the chosen row class
         return row_class(self, index, self.y - ROW_HEIGHT)
     
-class Water(ActiveRow):
-    def __init__(self, predecessor, index, y):
-        # dxs contains a list of possible directions (and speeds) in which child objects (in this case, logs) on this
-        # row could move. We pass the lists to the constructor of the base class, which randomly chooses one of the
-        # directions. We want logs on alternate rows to move in opposite directions, so we take advantage of the fact
-        # that that in Python, multiplying a list by True or False results in either the same list, or an empty list.
-        # So by looking at the direction of child objects on the previous row (predecessor.dx), we can decide whether
-        # child objects on this row should move left or right. If this is the first of a series of Water rows,
-        # predecessor.dx will be zero, so child objects could move in either direction.
-        dxs = [-2,-1]*(predecessor.dx >= 0) + [1,2]*(predecessor.dx <= 0)
-        super().__init__(Log, dxs, "water", index, y)
+# class Water(ActiveRow):
+#     def __init__(self, predecessor, index, y):
+#         # dxs contains a list of possible directions (and speeds) in which child objects (in this case, logs) on this
+#         # row could move. We pass the lists to the constructor of the base class, which randomly chooses one of the
+#         # directions. We want logs on alternate rows to move in opposite directions, so we take advantage of the fact
+#         # that that in Python, multiplying a list by True or False results in either the same list, or an empty list.
+#         # So by looking at the direction of child objects on the previous row (predecessor.dx), we can decide whether
+#         # child objects on this row should move left or right. If this is the first of a series of Water rows,
+#         # predecessor.dx will be zero, so child objects could move in either direction.
+#         dxs = [-2,-1]*(predecessor.dx >= 0) + [1,2]*(predecessor.dx <= 0)
+#         super().__init__(Log, dxs, "water", index, y)
 
-    def update(self):
-        super().update()
+#     def update(self):
+#         super().update()
 
-        for log in self.children:
-            # Child (log) object positions are relative to the parent row. If the player exists, and the player is at the
-            # same Y position, and is colliding with the current log, make the log dip down into the water slightly
-            if game.bunner and self.y == game.bunner.y and log == self.collide(game.bunner.x, -4):
-                log.y = 2
-            else:
-                log.y = 0
+#         for log in self.children:
+#             # Child (log) object positions are relative to the parent row. If the player exists, and the player is at the
+#             # same Y position, and is colliding with the current log, make the log dip down into the water slightly
+#             if game.bunner and self.y == game.bunner.y and log == self.collide(game.bunner.x, -4):
+#                 log.y = 2
+#             else:
+#                 log.y = 0
 
-    def push(self):
-        # Called when the player is standing on a log on this row, so player object can be moved at the same speed and
-        # in the same direction as the log
-        return self.dx
+#     def push(self):
+#         # Called when the player is standing on a log on this row, so player object can be moved at the same speed and
+#         # in the same direction as the log
+#         return self.dx
 
-    def check_collision(self, x):
-        # If we're colliding with a log, that's a good thing!
-        # margin of -4 ensures we can't stand right on the edge of a log
-        if self.collide(x, -4):
-            return PlayerState.ALIVE, 0
-        else:
-            game.play_sound("splash")
-            return PlayerState.SPLASH, 0
+#     def check_collision(self, x):
+#         # If we're colliding with a log, that's a good thing!
+#         # margin of -4 ensures we can't stand right on the edge of a log
+#         if self.collide(x, -4):
+#             return PlayerState.ALIVE, 0
+#         else:
+#             game.play_sound("splash")
+#             return PlayerState.SPLASH, 0
 
-    def play_sound(self):
-        game.play_sound("log", 1)
+#     def play_sound(self):
+#         game.play_sound("log", 1)
 
-    def next(self):
-        # After 2 water rows, there's a 50-50 chance of the next row being either another water row, or a dirt row
-        if self.index == 7 or (self.index >= 1 and random() < 0.5):
-            row_class, index = Dirt, randint(4,6)
-        else:
-            row_class, index = Water, self.index + 1
+#     def next(self):
+#         # After 2 water rows, there's a 50-50 chance of the next row being either another water row, or a dirt row
+#         if self.index == 7 or (self.index >= 1 and random() < 0.5):
+#             row_class, index = Dirt, randint(4,6)
+#         else:
+#             row_class, index = Water, self.index + 1
 
-        # Create an object of the chosen row class
-        return row_class(self, index, self.y - ROW_HEIGHT)
+#         # Create an object of the chosen row class
+#         return row_class(self, index, self.y - ROW_HEIGHT)
 
 class Road(ActiveRow):
     def __init__(self, predecessor, index, y):
         # Specify the possible directions and speeds from which the movement of cars on this row will be chosen
         # We use Python's set data structure to specify that the car velocities on this row will be any of the numbers
         # from -5 to 5, except for zero or the velocity of the cars on the previous row
-        dxs = list(set(range(-5, 6)) - set([0, predecessor.dx]))
+        dxs = list(set(range(-2, 2)) - set([0, predecessor.dx]))
         super().__init__(Car, dxs, "road", index, y)
 
     def update(self):
@@ -643,6 +688,8 @@ class Rail(Row):
         super().__init__("rail", index, y)
 
         self.predecessor = predecessor
+        self.train_incoming = False
+
 
     def update(self):
         super().update()
@@ -658,7 +705,12 @@ class Rail(Row):
                 dx = choice([-20, 20])
                 self.children.append(Train(dx, (WIDTH + 1000 if dx < 0 else -1000, -13)))
                 game.play_sound("bell")
+                self.train_incoming = True
                 game.play_sound("train", 2)
+        
+        self.train_incoming = False
+                
+                
 
     def check_collision(self, x):
         if self.index == 2 and self.predecessor.collide(x):
@@ -674,7 +726,7 @@ class Rail(Row):
         if self.index < 3:
             row_class, index = Rail, self.index + 1
         else:
-            item = choice( ((Road, 0), (Water, 0)) )
+            item = choice( ((Road, 0), ) )#(Water, 0)) ) 
             row_class, index = item[0], item[1]
 
         # Create an object of the chosen row class
@@ -687,10 +739,10 @@ class Game:
 
         try:
             if bunner:
-                music.set_volume(0.4)
+                music.set_volume(0)
             else:
                 music.play("theme")
-                music.set_volume(1)
+                music.set_volume(0)
         except:
             pass
 
@@ -731,7 +783,7 @@ class Game:
         # contribute to the volume of the sound effect. These numbers are added together by Python's sum function.
         # On the following line we ensure that the volume can never be above 40% of the maximum possible volume.
         if self.bunner:
-            for name, count, row_class in [("river", 2, Water), ("traffic", 3, Road)]:
+            for name, count, row_class in [ ("traffic", 3, Road)]: # ("river", 2, Water),
                 # The first line uses a list comprehension to get each row of the appropriate type, e.g. Water rows
                 # if we're currently updating the "river" sound effect.
                 volume = sum([16.0 / max(16.0, abs(r.y - self.bunner.y)) for r in self.rows if isinstance(r, row_class)]) - 0.2
@@ -864,20 +916,24 @@ def display_number(n, colour, x, align):
 
 class State(Enum):
     MENU = 1
-    PLAY = 2
+    MANUAL = 2
     GAME_OVER = 3
+    AUTO = 4
 
 def update():
     global state, game, high_score
 
     if state == State.MENU:
         if key_just_pressed(keys.SPACE):
-            state = State.PLAY
+            state = State.MANUAL
+            game = Game(Bunner((240, -320)))
+        elif key_just_pressed(keys.A):
+            state = State.AUTO
             game = Game(Bunner((240, -320)))
         else:
             game.update()
 
-    elif state == State.PLAY:
+    elif state == State.MANUAL or state == State.AUTO:
         # Is it game over?
         if game.bunner.state != PlayerState.ALIVE and game.bunner.timer < 0:
             # Update high score
@@ -908,8 +964,10 @@ def draw():
     if state == State.MENU:
         screen.blit("title", (0, 0))
         screen.blit("start" + str([0, 1, 2, 1][game.scroll_pos // 6 % 4]), ((WIDTH - 270) // 2, HEIGHT - 240))
+        screen.draw.text("PRESS A FOR AUTO MODE", ((WIDTH - 225) // 2, HEIGHT - 170))
+        
 
-    elif state == State.PLAY:
+    elif state == State.MANUAL or state == State.AUTO:
         # Display score and high score
         display_number(game.score(), 0, 0, 0)
         display_number(high_score, 1, WIDTH - 10, 1)
