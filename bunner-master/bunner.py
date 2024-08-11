@@ -122,6 +122,8 @@ class Bunner(MyActor):
     
     def _ai_decide(self, current_row, next_row):
         
+        direction = None
+        
         if isinstance(next_row, Grass):
             direction = 0
             
@@ -129,44 +131,46 @@ class Bunner(MyActor):
            # 1. Check if there are cars on the row 
            # 2. check if distance from a car to player is safe if yes move forward
            # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
+            if len(next_row.children) == 0:
+                direction = 0
             
-            
-            for rowindex in range(len(next_row.children)):
-                object_pos = next_row.children[rowindex].pos
-                object_x = object_pos[0]
-                next_car = next_row.children[rowindex]
-            
-                if abs(self.x - object_x) > 70:
-                    direction = 0
-                elif next_car.dx == 1 and abs(self.x - object_x) < 70 :#and abs(self.x - current_object_x) > 50: 
-                    direction = 3
-                elif next_car.dx == -1 and abs(self.x - object_x) < 70 :#and abs(self.x - current_object_x) > 50:
-                    direction = 1
-                elif next_car.dx == -1 and self.x > object_x and abs(self.x - object_x) < 70:
-                    direction = 0
-                elif next_car.dx == 1 and self.x < object_x and abs(self.x - object_x) < 70:
-                    direction = 0
-                else:
-                    direction = 4
-                    
-                for currentrowindex in range(len(current_row.children)):
-                    current_object_pos = current_row.children[currentrowindex].pos
-                    current_object_x = current_object_pos[0]
-                    current_car = current_row.children[currentrowindex]
-                    
-                    if abs(self.x - current_object_x) < 70:
-                        if current_car.dx == 1:
-                            direction = 1
-                        if current_car.dx == -1:
-                            direction = 3  
+            else:    
+                for rowindex in range(len(next_row.children)):
+                    object_pos = next_row.children[rowindex].pos
+                    object_x = object_pos[0]
+                    next_car = next_row.children[rowindex]
                 
+                    if abs(self.x - object_x) > 70:
+                        direction = 0
+                    elif next_car.dx == 1 and abs(self.x - object_x) < 70 :#and abs(self.x - current_object_x) > 50: 
+                        direction = 3
+                    elif next_car.dx == -1 and abs(self.x - object_x) < 70 :#and abs(self.x - current_object_x) > 50:
+                        direction = 1
+                    elif next_car.dx == -1 and self.x > object_x and abs(self.x - object_x) < 70:
+                        direction = 0
+                    elif next_car.dx == 1 and self.x < object_x and abs(self.x - object_x) < 70:
+                        direction = 0
+                    elif len(next_row.children) == 0:
+                        direction = 0
+                    elif self.y > 750:
+                        direction = 4
+                    else:
+                        direction = 4
+                        
+                    for currentrowindex in range(len(current_row.children)):
+                        current_object_pos = current_row.children[currentrowindex].pos
+                        current_object_x = current_object_pos[0]
+                        current_car = current_row.children[currentrowindex]
+                        
+                        if abs(self.x - current_object_x) < 70:
+                            if current_car.dx == 1:
+                                direction = 1
+                            if current_car.dx == -1:
+                                direction = 3  
+                        if len(current_row.children) == 0:
+                            direction = 0
+
   
-                
-                    
-                
-                                         
-                
-            
         # if isinstance(next_row, Rail):
         #     # if next_row.train_incoming == True:
         #         # direction = 4
@@ -189,6 +193,9 @@ class Bunner(MyActor):
             direction = 0
             
         if isinstance(next_row, Dirt):
+            direction = 0
+            
+        if direction is None:
             direction = 0
 
         return direction
@@ -227,7 +234,10 @@ class Bunner(MyActor):
             
                 if self.timer == 0:
                     # Take the next input off the queue and process it
-                    self.handle_input(self._ai_decide(current_row, next_row))        
+                    try:
+                        self.handle_input(self._ai_decide(current_row, next_row))        
+                    except Exception as exp:
+                        print(exp)
 
             land = False
             if self.timer > 0:
@@ -280,6 +290,8 @@ class Bunner(MyActor):
             # Limit x position so player doesn't go off the screen. The player movement code doesn't allow jumping off
             # the screen, but without this line, the player could be carried off the screen by a log
             self.x = max(16, min(WIDTH - 16, self.x))
+            
+
         else:
             # Not alive - timer now counts down prior to game over screen
             self.timer -= 1
@@ -767,7 +779,7 @@ class Game:
         if self.bunner:
             # Scroll faster if the player is close to the top of the screen. Limit scroll speed to
             # between 1 and 3 pixels per frame.
-            self.scroll_pos -= max(1, min(3, float(self.scroll_pos + HEIGHT - self.bunner.y) / (HEIGHT // 4)))
+            self.scroll_pos -= max(1, min(6, float(self.scroll_pos + HEIGHT - self.bunner.y) / (HEIGHT // 4)))
         else:
             self.scroll_pos -= 1
 
@@ -844,22 +856,24 @@ class Game:
         return int(-320 - game.bunner.min_y) // 40
 
     def play_sound(self, name, count=1):
-        try:
-            # Some sounds have multiple varieties. If count > 1, we'll randomly choose one from those
-            # We don't play any sounds if there is no player (e.g. if we're on the menu)
-            if self.bunner:
-                # Pygame Zero allows you to write things like 'sounds.explosion.play()'
-                # This automatically loads and plays a file named 'explosion.wav' (or .ogg) from the sounds folder (if
-                # such a file exists)
-                # But what if you have files named 'explosion0.ogg' to 'explosion5.ogg' and want to randomly choose
-                # one of them to play? You can generate a string such as 'explosion3', but to use such a string
-                # to access an attribute of Pygame Zero's sounds object, we must use Python's built-in function getattr
-                sound = getattr(sounds, name + str(randint(0, count - 1)))
-                sound.play()
-        except:
-            # If a sound fails to play, ignore the error
-            pass
-
+        # try:
+        #     # Some sounds have multiple varieties. If count > 1, we'll randomly choose one from those
+        #     # We don't play any sounds if there is no player (e.g. if we're on the menu)
+        #     if self.bunner:
+        #         # Pygame Zero allows you to write things like 'sounds.explosion.play()'
+        #         # This automatically loads and plays a file named 'explosion.wav' (or .ogg) from the sounds folder (if
+        #         # such a file exists)
+        #         # But what if you have files named 'explosion0.ogg' to 'explosion5.ogg' and want to randomly choose
+        #         # one of them to play? You can generate a string such as 'explosion3', but to use such a string
+        #         # to access an attribute of Pygame Zero's sounds object, we must use Python's built-in function getattr
+        #         # sound = getattr(sounds, name + str(randint(0, count - 1)))
+        #         # sound.play()
+        # except:
+        #     # If a sound fails to play, ignore the error
+        #     pass
+        pass
+        
+        
     def loop_sound(self, name, count, volume):
         try:
             # Similar to play_sound above, but for looped sounds we need to keep a reference to the sound so that we can
@@ -957,6 +971,8 @@ def update():
                 pass
 
             state = State.GAME_OVER
+            game = Game(Bunner((240, -320)))
+            state = State.AUTO
         else:
             game.update()
 
@@ -966,6 +982,8 @@ def update():
             game.stop_looped_sounds()
             state = State.MENU
             game = Game()
+            
+    
 
 def draw():
     game.draw()
