@@ -401,21 +401,27 @@ class Row(MyActor):
         return x >= 16 and x <= WIDTH-16
 
 class ActiveRow(Row):
-    def __init__(self, child_type, dxs, base_image, index, y):
+    def __init__(self, child_type, dxs, base_image, index, y, maxchildren = None):
         super().__init__(base_image, index, y)
 
         self.child_type = child_type    # Class to be used for child objects (e.g. Car)
         self.timer = 0
+        self.maxchildren = maxchildren
         self.dx = choice(dxs)   # Randomly choose a direction for cars/logs to move
 
         # Populate the row with child objects (cars or logs). Without this, the row would initially be empty.
         x = -WIDTH / 2 - 70
         
-        while x < WIDTH / 2 + 70:
+        counter = maxchildren
+        
+        while x < WIDTH / 2 + 70 and counter != 0:
             x += randint(240, 480)
             pos = (WIDTH / 2 + (x if self.dx > 0 else -x), 0)
             self.children.append(self.child_type(self.dx, pos))
-
+            counter -= 1
+            
+    
+    
     def update(self):
         super().update()
 
@@ -425,7 +431,7 @@ class ActiveRow(Row):
         self.timer -= 1
 
         # Create new child objects on a random interval
-        if self.timer < -200:
+        if self.timer < -300:
             pos = (WIDTH + 70 if self.dx < 0 else -70, 0)
             self.children.append(self.child_type(self.dx, pos))
             # 240 is minimum distance between the start of one child object and the start of the next, assuming its
@@ -628,8 +634,8 @@ class Road(ActiveRow):
         # We use Python's set data structure to specify that the car velocities on this row will be any of the numbers
         # from -5 to 5, except for zero or the velocity of the cars on the previous row
         dxs = list(set(range(-2, 2)) - set([0, predecessor.dx]))
-        super().__init__(Car, dxs, "road", index, y)
-
+        super().__init__(Car, dxs, "road", index, y, maxchildren = 0)
+        
     def update(self):
         super().update()
 
@@ -779,7 +785,7 @@ class Game:
         if self.bunner:
             # Scroll faster if the player is close to the top of the screen. Limit scroll speed to
             # between 1 and 3 pixels per frame.
-            self.scroll_pos -= max(1, min(6, float(self.scroll_pos + HEIGHT - self.bunner.y) / (HEIGHT // 4)))
+            self.scroll_pos -= max(1, min(10, float(self.scroll_pos + HEIGHT - self.bunner.y) / (HEIGHT // 4)))
         else:
             self.scroll_pos -= 1
 
