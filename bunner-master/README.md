@@ -10,3 +10,13 @@ Add auto mode for the game in which, the algoritm determines in which direction 
 4) 1# At most one log.
    2# Or remove logs and water.
 5) Implement obstacale avoiding metod.
+
+# New task
+
+1) Polish the ai_decide function.
+2) Remove all comented code.
+3) Optional: Add the train method.
+
+# Leetcode challenges
+
+1) https://leetcode.com/problems/two-sum/description/ Complete the task with brute force then use dictionary.

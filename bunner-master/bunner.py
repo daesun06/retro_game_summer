@@ -86,6 +86,8 @@ DY = [-4,0,4,0, 0]
 
 class Bunner(MyActor):
     MOVE_DISTANCE = 10
+    JUMP_COOLDOWN = 16
+
 
     def __init__(self, pos):
         super().__init__("blank", pos)
@@ -94,7 +96,7 @@ class Bunner(MyActor):
 
         self.direction = 2
         self.timer = 0
-
+        self.jump_cooldown = 0
         # If a control input is pressed while the rabbit is in the middle of jumping, it's added to the input queue
         self.input_queue = []
 
@@ -114,7 +116,7 @@ class Bunner(MyActor):
                     # It's okay to move here, so set direction and timer. Player will move one pixel per frame
                     # for the specified number of frames
                     self.direction = dir
-                    self.timer = Bunner.MOVE_DISTANCE 
+                    self.timer = Bunner.MOVE_DISTANCE
                     game.play_sound("jump", 1)
 
                 # No need to continue searching
@@ -170,24 +172,15 @@ class Bunner(MyActor):
                         if len(current_row.children) == 0:
                             direction = 0
 
-  
-        # if isinstance(next_row, Rail):
-        #     # if next_row.train_incoming == True:
-        #         # direction = 4
-        #     # else:
-        #         direction = 0
+        if isinstance(next_row, Rail):
+            if len(next_row.children) == 0:
+                direction = 0
+            else:
+                direction = 4
+                self.jump_cooldown = 10
+                direction = 0
+
             
-            
-        # if isinstance(current_row, Water):
-        #     if abs(self.x - object_x) < 5: 
-        #         direction = 0
-        #     elif current_row.children[rowindex].dx == 1 and abs(self.x - object_x) < 5:
-        #         direction = 3
-        #     elif current_row.children[rowindex].dx == 3 and abs(self.x - object_x) < 5:
-        #         direction = 1
-        #     else:
-        #         direction = 4
-                
             
         if isinstance(next_row, Pavement):
             direction = 0
@@ -230,15 +223,22 @@ class Bunner(MyActor):
                     # Take the next input off the queue and process it
                     self.handle_input(self.input_queue.pop(0))
             
-            if state == State.AUTO:
-            
-                if self.timer == 0:
+            if state == State.AUTO:        
+                if self.timer == 0 and self.jump_cooldown == 0:
                     # Take the next input off the queue and process it
                     try:
-                        self.handle_input(self._ai_decide(current_row, next_row))        
+                        dir = self._ai_decide(current_row, next_row)
+                        if dir != DIRECTION_WAIT:
+                            self.handle_input(dir)  
+                            self.jump_cooldown = self.JUMP_COOLDOWN
+                        
                     except Exception as exp:
                         print(exp)
-
+            
+            if self.jump_cooldown > 0:
+                self.jump_cooldown -= 1
+            
+            
             land = False
             if self.timer > 0:
                 # Apply movement
@@ -431,7 +431,7 @@ class ActiveRow(Row):
         self.timer -= 1
 
         # Create new child objects on a random interval
-        if self.timer < -300:
+        if self.timer < -100:
             pos = (WIDTH + 70 if self.dx < 0 else -70, 0)
             self.children.append(self.child_type(self.dx, pos))
             # 240 is minimum distance between the start of one child object and the start of the next, assuming its
@@ -444,61 +444,6 @@ class Hedge(MyActor):
     def __init__(self, x, y, pos):
         super().__init__("bush"+str(x)+str(y), pos)
 
-# def generate_hedge_mask():
-#     # In this context, a mask is a series of boolean values which allow or prevent parts of an underlying image from showing through.
-#     # This function creates a mask representing the presence or absence of hedges in a Grass row. False means a hedge
-#     # is present, True represents a gap. Initially we create a list of 12 elements. For each element there is a small
-#     # chance of a gap, but normally all element will be False, representing a hedge. We then randomly set one item to
-#     # True, to ensure that there is always at least one gap that the player can get through
-#     mask = [random() < 0.01 for i in range(12)]
-#     mask[randint(0, 11)] = True # force there to be one gap
-
-#     # We then widen gaps to a minimum of 3 tiles. This happens in two steps.
-#     # First, we recreate the mask list, except this time whether a gap is present is based on whether there was a gap
-#     # in either the original element or its neighbouring elements. When using Python's built-in sum function, a value
-#     # of True is treated as 1 and False as 0. We must use the min/max functions to ensure that we don't try to look
-#     # at a neighbouring element which doesn't exist (e.g. there is no neighbour to the right of the last element)
-#     mask = [sum(mask[max(0, i-1):min(12, i+2)]) > 0 for i in range(12)]
-
-#     # We want to ensure gaps are a minimum of 3 tiles wide, but the previous line only ensures a minimum gap of 2 tiles
-#     # at the edges. The last step is to return a new list consisting of the old list with the first and last elements duplicated
-#     return [mask[0]] + mask + 2 * [mask[-1]]
-
-# def classify_hedge_segment(mask, previous_mid_segment):
-#     # This function helps determine which sprite should be used by a particular hedge segment. Hedge sprites are numbered
-#     # 00, 01, 10, 11, 20, 21 - up to 51. The second number indicates whether it's a bottom (0) or top (1) segment,
-#     # but this method is concerned only with the first number. 0 represents a single-tile-width hedge. 1 and 2 represent
-#     # the left-most or right-most sprites in a multi-tile-width hedge. 3, 4 and 5 all represent middle pieces in hedges
-#     # which are 3 or more tiles wide.
-
-#     # mask is a list of 4 boolean values - a slice from the list generated by generate_hedge_mask. True represents a gap
-#     # and False represents a hedge. mask[1] is the item we're currently looking at.
-#     if mask[1]:
-#         # mask[1] == True represents a gap, so there will be no hedge sprite at this location
-#         sprite_x = None
-#     else:
-#         # There's a hedge here - need to check either side of it to see if it's a single-width, left-most, right-most
-#         # or middle piece. The calculation generates a number from 0 to 3 accordingly. Note that when boolean values
-#         # are used in arithmetic in Python, False is treated as being 0 and True as 1.
-#         sprite_x = 3 - 2 * mask[0] - mask[2]
-
-#     if sprite_x == 3:
-#         # If this is a middle piece, to ensure the piece tiles correctly, we alternate between sprites 3 and 4.
-#         # If the next piece is going to be the last of this hedge section (sprite 2), we need to make sure that sprite 3
-#         # does not precede it, as the two do not tile together correctly. In this case we should use sprite 5.
-#         # mask[3] tells us whether there's a gap 2 tiles to the right - which means the next tile will be sprite 2
-#         if previous_mid_segment == 4 and mask[3]:
-#             return 5, None
-#         else:
-#             # Alternate between 3 and 4
-#             if previous_mid_segment == None or previous_mid_segment == 4:
-#                 sprite_x = 3
-#             elif previous_mid_segment == 3:
-#                 sprite_x = 4
-#             return sprite_x, sprite_x
-#     else:
-#         # Not a middle piece
-#         return sprite_x, None
 
 class Grass(Row):
     def __init__(self, predecessor, index, y):
@@ -513,24 +458,6 @@ class Grass(Row):
         # self.hedge_row_index = None     # 0 or 1, or None if no hedges on this row
         # self.hedge_mask = None
 
-        # if not isinstance(predecessor, Grass) or predecessor.hedge_row_index == None:
-        #     # Create a brand-new set of hedges? We will only create hedges if the previous row didn't have any.
-        #     # We also only want hedges to appear on certain types of grass row, and on only a random selection
-        #     # of rows
-        #     if random() < 0.5 and index > 7 and index < 14:
-        #         self.hedge_mask = generate_hedge_mask()
-        #         self.hedge_row_index = 0
-        # elif predecessor.hedge_row_index == 0:
-        #     self.hedge_mask = predecessor.hedge_mask
-        #     self.hedge_row_index = 1
-
-        # if self.hedge_row_index != None:
-        #     # See comments in classify_hedge_segment for explanation of previous_mid_segment
-        #     previous_mid_segment = None
-        #     for i in range(1, 13):
-        #         sprite_x, previous_mid_segment = classify_hedge_segment(self.hedge_mask[i - 1:i + 3], previous_mid_segment)
-        #         if sprite_x != None:
-        #             self.children.append(Hedge(sprite_x, self.hedge_row_index, (i * 40 - 20, 0)))
 
     def allow_movement(self, x):
         # allow_movement in the base class ensures that the player can't walk off the left and right sides of the
@@ -578,63 +505,15 @@ class Dirt(Row):
         # Create an object of the chosen row class
         return row_class(self, index, self.y - ROW_HEIGHT)
     
-# class Water(ActiveRow):
-#     def __init__(self, predecessor, index, y):
-#         # dxs contains a list of possible directions (and speeds) in which child objects (in this case, logs) on this
-#         # row could move. We pass the lists to the constructor of the base class, which randomly chooses one of the
-#         # directions. We want logs on alternate rows to move in opposite directions, so we take advantage of the fact
-#         # that that in Python, multiplying a list by True or False results in either the same list, or an empty list.
-#         # So by looking at the direction of child objects on the previous row (predecessor.dx), we can decide whether
-#         # child objects on this row should move left or right. If this is the first of a series of Water rows,
-#         # predecessor.dx will be zero, so child objects could move in either direction.
-#         dxs = [-2,-1]*(predecessor.dx >= 0) + [1,2]*(predecessor.dx <= 0)
-#         super().__init__(Log, dxs, "water", index, y)
 
-#     def update(self):
-#         super().update()
-
-#         for log in self.children:
-#             # Child (log) object positions are relative to the parent row. If the player exists, and the player is at the
-#             # same Y position, and is colliding with the current log, make the log dip down into the water slightly
-#             if game.bunner and self.y == game.bunner.y and log == self.collide(game.bunner.x, -4):
-#                 log.y = 2
-#             else:
-#                 log.y = 0
-
-#     def push(self):
-#         # Called when the player is standing on a log on this row, so player object can be moved at the same speed and
-#         # in the same direction as the log
-#         return self.dx
-
-#     def check_collision(self, x):
-#         # If we're colliding with a log, that's a good thing!
-#         # margin of -4 ensures we can't stand right on the edge of a log
-#         if self.collide(x, -4):
-#             return PlayerState.ALIVE, 0
-#         else:
-#             game.play_sound("splash")
-#             return PlayerState.SPLASH, 0
-
-#     def play_sound(self):
-#         game.play_sound("log", 1)
-
-#     def next(self):
-#         # After 2 water rows, there's a 50-50 chance of the next row being either another water row, or a dirt row
-#         if self.index == 7 or (self.index >= 1 and random() < 0.5):
-#             row_class, index = Dirt, randint(4,6)
-#         else:
-#             row_class, index = Water, self.index + 1
-
-#         # Create an object of the chosen row class
-#         return row_class(self, index, self.y - ROW_HEIGHT)
 
 class Road(ActiveRow):
     def __init__(self, predecessor, index, y):
         # Specify the possible directions and speeds from which the movement of cars on this row will be chosen
         # We use Python's set data structure to specify that the car velocities on this row will be any of the numbers
         # from -5 to 5, except for zero or the velocity of the cars on the previous row
-        dxs = list(set(range(-2, 2)) - set([0, predecessor.dx]))
-        super().__init__(Car, dxs, "road", index, y, maxchildren = 0)
+        dxs = list(set(range(-5, 5)) - set([0, predecessor.dx]))
+        super().__init__(Car, dxs, "road", index, y, maxchildren = 2)
         
     def update(self):
         super().update()
@@ -676,8 +555,8 @@ class Road(ActiveRow):
                 row_class, index = Road, self.index + 1
             elif r < 0.88:
                 row_class, index = Grass, randint(0,6)
-            # elif r < 0.94:
-            #     row_class, index = Rail, 0
+            elif r < 0.94:
+                row_class, index = Rail, 0
             else:
                 row_class, index = Pavement, 0
         else:
@@ -685,8 +564,8 @@ class Road(ActiveRow):
             r = random()
             if r < 0.6:
                 row_class, index = Grass, randint(0,6)
-            # elif r < 0.9:
-            #     row_class, index = Rail, 0
+            elif r < 0.9:
+                row_class, index = Rail, 0
             else:
                 row_class, index = Pavement, 0
 
@@ -710,54 +589,51 @@ class Pavement(Row):
         return row_class(self, index, self.y - ROW_HEIGHT)
 
 # Note that Rail does not inherit from ActiveRow
-# class Rail(Row):
-#     def __init__(self, predecessor, index, y):
-#         super().__init__("rail", index, y)
+class Rail(Row):
+    def __init__(self, predecessor, index, y):
+        super().__init__("rail", index, y)
 
-#         self.predecessor = predecessor
-#         self.train_incoming = False
+        self.predecessor = predecessor
+        self.train_incoming = False
 
 
-#     def update(self):
-#         super().update()
+    def update(self):
+        super().update()
 
-#         # Only Rail rows with index 1 have trains on them
-#         if self.index == 1:
-#             # Recreate the children list, excluding any which are too far off the edge of the screen to be visible
-#             self.children = [c for c in self.children if c.x > -1000 and c.x < WIDTH + 1000]
+        # Only Rail rows with index 1 have trains on them
+        if self.index == 1:
+            # Recreate the children list, excluding any which are too far off the edge of the screen to be visible
+            self.children = [c for c in self.children if c.x > -1000 and c.x < WIDTH + 1000]
 
-#             # If on-screen, and there is currently no train, and with a 1% chance every frame, create a train
-#             if self.y < game.scroll_pos+HEIGHT and len(self.children) == 0 and random() < 0.01:
-#                 # Randomly choose a direction for trains to move. This can be different for each train created
-#                 dx = choice([-20, 20])
-#                 self.children.append(Train(dx, (WIDTH + 1000 if dx < 0 else -1000, -13)))
-#                 game.play_sound("bell")
-#                 self.train_incoming = True
-#                 game.play_sound("train", 2)
-        
-#         self.train_incoming = False
-                
-                
+            # If on-screen, and there is currently no train, and with a 1% chance every frame, create a train
+            if self.y < game.scroll_pos+HEIGHT and len(self.children) == 0 and random() < 0.01:
+                # Randomly choose a direction for trains to move. This can be different for each train created
+                dx = choice([-20, 20])
+                self.children.append(Train(dx, (WIDTH + 1000 if dx < 0 else -1000, -13)))
+                game.play_sound("bell")
+                self.train_incoming = True
+                game.play_sound("train", 2)
+                   
 
-#     def check_collision(self, x):
-#         if self.index == 2 and self.predecessor.collide(x):
-#             game.play_sound("splat", 1)
-#             return PlayerState.SPLAT, 8     # For the meaning of the second return value, see comments in Bunner.update
-#         else:
-#             return PlayerState.ALIVE, 0
+    def check_collision(self, x):
+        if self.index == 2 and self.predecessor.collide(x):
+            game.play_sound("splat", 1)
+            return PlayerState.SPLAT, 8     # For the meaning of the second return value, see comments in Bunner.update
+        else:
+            return PlayerState.ALIVE, 0
 
-#     def play_sound(self):
-#         game.play_sound("grass", 1)
+    def play_sound(self):
+        game.play_sound("grass", 1)
 
-#     def next(self):
-#         if self.index < 3:
-#             row_class, index = Rail, self.index + 1
-#         else:
-#             item = choice( ((Road, 0), ) )#(Water, 0)) ) 
-#             row_class, index = item[0], item[1]
+    def next(self):
+        if self.index < 3:
+            row_class, index = Rail, self.index + 1
+        else:
+            item = choice( ((Road, 0), ) )#(Water, 0)) ) 
+            row_class, index = item[0], item[1]
 
-#         # Create an object of the chosen row class
-#         return row_class(self, index, self.y - ROW_HEIGHT)
+        # Create an object of the chosen row class
+        return row_class(self, index, self.y - ROW_HEIGHT)
 
 class Game:
     def __init__(self, bunner=None):
@@ -785,7 +661,7 @@ class Game:
         if self.bunner:
             # Scroll faster if the player is close to the top of the screen. Limit scroll speed to
             # between 1 and 3 pixels per frame.
-            self.scroll_pos -= max(1, min(10, float(self.scroll_pos + HEIGHT - self.bunner.y) / (HEIGHT // 4)))
+            self.scroll_pos -= max(1, min(20, float(self.scroll_pos + HEIGHT - self.bunner.y) / (HEIGHT // 4)))
         else:
             self.scroll_pos -= 1
 
@@ -862,21 +738,7 @@ class Game:
         return int(-320 - game.bunner.min_y) // 40
 
     def play_sound(self, name, count=1):
-        # try:
-        #     # Some sounds have multiple varieties. If count > 1, we'll randomly choose one from those
-        #     # We don't play any sounds if there is no player (e.g. if we're on the menu)
-        #     if self.bunner:
-        #         # Pygame Zero allows you to write things like 'sounds.explosion.play()'
-        #         # This automatically loads and plays a file named 'explosion.wav' (or .ogg) from the sounds folder (if
-        #         # such a file exists)
-        #         # But what if you have files named 'explosion0.ogg' to 'explosion5.ogg' and want to randomly choose
-        #         # one of them to play? You can generate a string such as 'explosion3', but to use such a string
-        #         # to access an attribute of Pygame Zero's sounds object, we must use Python's built-in function getattr
-        #         # sound = getattr(sounds, name + str(randint(0, count - 1)))
-        #         # sound.play()
-        # except:
-        #     # If a sound fails to play, ignore the error
-        #     pass
+        
         pass
         
         
