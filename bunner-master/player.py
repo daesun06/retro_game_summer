@@ -80,11 +80,11 @@ class Bunner(MyActor):
             float: The calculated reward value.
         """
         DEATH_PENALTY = -1000  # Significantly increased penalty for death
-        FORWARD_REWARD = 50    # Major reward for moving forward and setting a new record
-        PROGRESS_REWARD = 10   # Solid reward for any upward movement
+        FORWARD_REWARD = 60    # Major reward for moving forward and setting a new record (Increased)
+        PROGRESS_REWARD = 15   # Solid reward for any upward movement (Increased)
         TIME_PENALTY = -0.5    # Increased penalty per step to encourage efficiency
-        WAIT_PENALTY = -5      # Higher penalty for waiting (doing nothing)
-        SIDEWAYS_PENALTY = -3  # Moderate penalty for sideways movement
+        WAIT_PENALTY = -2      # Higher penalty for waiting (doing nothing) (Decreased)
+        SIDEWAYS_PENALTY = -1  # Moderate penalty for sideways movement (Decreased)
         BACKWARDS_PENALTY = -20 # Severe penalty for moving backwards
         INVALID_MOVE_PENALTY = -10 # Serious penalty for attempting invalid moves
 
@@ -152,8 +152,8 @@ class Bunner(MyActor):
             # Get the current state S' (after the last action resolved)
             current_state_features = agent.get_state(self, game)
 
-            # Learn from the experience (S, A, R, S')
-            agent.learn(self.last_state_for_learning, self.last_action_for_learning, reward, current_state_features)
+            # Learn from the experience (S, A, R, S', Done)
+            agent.learn(self.last_state_for_learning, self.last_action_for_learning, reward, current_state_features, action_resulted_in_death)
 
             # If player died, reset the learning state variables for the next episode
             if action_resulted_in_death:

@@ -18,11 +18,11 @@ DX = [0, 4, 0, -4, 0]
 DY = [-4, 0, 4, 0, 0] 
 
 # Q-learning parameters
-ALPHA = 0.2  # Learning rate (increased for faster updates)
+ALPHA = 0.01  # Learning rate (Restored for peak performance run)
 GAMMA = 0.95  # Discount factor (increased to value future rewards more)
 EPSILON_START = 1.0 # Exploration rate start
 EPSILON_DECAY = 0.99995 # Slower exploration rate decay
-EPSILON_MIN = 0.05 # Minimum exploration rate (increased slightly to ensure continued exploration)
+EPSILON_MIN = 0.05 # Minimum exploration rate (Restored for peak performance run)
 Q_TABLE_FILE = 'q_table.pkl' # File to save/load Q-table
 
 # Random seed for deterministic environment (None for random behavior)

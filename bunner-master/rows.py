@@ -60,22 +60,13 @@ class ActiveRow(Row):
     
     def update(self):
         super().update()
-        # Import game here to avoid circular imports
-        from game import game
-        
-        # Get speed multiplier for timer adjustment
-        speed_multiplier = game.speed_multiplier if hasattr(game, 'speed_multiplier') else 1
-        
         self.children = [c for c in self.children if c.x > -70 and c.x < WIDTH + 70]
-        # Apply speed multiplier to timer reduction
-        timer_reduction = min(abs(self.timer), speed_multiplier) if self.timer < 0 else speed_multiplier
-        self.timer -= timer_reduction
+        self.timer -= 1
 
         if self.timer < -100:
             pos = (WIDTH + 70 if self.dx < 0 else -70, 0)
             self.children.append(self.child_type(self.dx, pos))
-            # Adjust spawn timer based on speed - faster speed means quicker spawning
-            self.timer = (1 + self.rand.random()) * (240 / abs(self.dx)) / speed_multiplier
+            self.timer = (1 + self.rand.random()) * (240 / abs(self.dx))
 
 class Grass(Row):
     def __init__(self, predecessor, index, y):
@@ -210,22 +201,12 @@ class Rail(Row):
         # Import game here to avoid circular imports
         from game import game
         
-        # Get speed multiplier for spawn timing adjustment
-        speed_multiplier = game.speed_multiplier if hasattr(game, 'speed_multiplier') else 1
-        
         if self.index == 1:
             self.children = [c for c in self.children if c.x > -1000 and c.x < WIDTH + 1000]
             
-            # Increase spawn probability based on speed multiplier
-            # Faster game should have more frequent train spawns
-            base_spawn_probability = 0.01
-            adjusted_probability = min(0.3, base_spawn_probability * speed_multiplier)
-            
-            if self.y < game.scroll_pos+HEIGHT and len(self.children) == 0 and self.rand.random() < adjusted_probability:
-                # Train speed also affected by speed multiplier
-                base_speed = self.rand.choice([-20, 20])
-                train_speed = base_speed * speed_multiplier / 3  # Dividing by 3 to avoid trains moving too fast
-                self.children.append(Train(train_speed, (WIDTH + 1000 if train_speed < 0 else -1000, -13)))
+            if self.y < game.scroll_pos+HEIGHT and len(self.children) == 0 and self.rand.random() < 0.01:
+                dx = self.rand.choice([-20, 20])
+                self.children.append(Train(dx, (WIDTH + 1000 if dx < 0 else -1000, -13)))
                 game.play_sound("bell")
                 self.train_incoming = True
                 game.play_sound("train", 2)

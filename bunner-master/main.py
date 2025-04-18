@@ -1,5 +1,7 @@
 import pgzero, pgzrun, pygame, sys, atexit
 from enum import Enum
+import csv # Added for CSV writing
+import os # Added for checking file existence
 
 # Import our modules
 from utils import check_python_version, key_just_pressed, display_number, init_random_seeds
@@ -36,8 +38,10 @@ epoch_count = 0 # Track number of games played/restarts
 # Define all possible actions for the agent
 ALL_ACTIONS = [DIRECTION_UP, DIRECTION_RIGHT, DIRECTION_DOWN, DIRECTION_LEFT, DIRECTION_WAIT]
 
-MAX_SPEED_MULTIPLIER = 20
+MAX_SPEED_MULTIPLIER = 200
 TARGET_FPS = 60 # Base FPS
+STATS_FILENAME = "training_stats.csv" # File to save stats
+STATS_SAVE_INTERVAL = 20 # How often to save stats (in epochs)
 
 def load_high_score():
     global high_score
@@ -51,9 +55,11 @@ def load_high_score():
 def initialize_agent():
     """Initializes the Q-learning agent and loads its table."""
     global agent
-    agent = QLearningAgent(actions=ALL_ACTIONS)
+    # Define batch size here or load from constants
+    BATCH_SIZE = 32 
+    agent = QLearningAgent(actions=ALL_ACTIONS, batch_size=BATCH_SIZE)
     # agent.load_q_table() # Loading handled within QLearningAgent constructor
-    print("Q-Learning agent initialized.")
+    print(f"Q-Learning agent initialized with batch size {BATCH_SIZE}.")
 
 def save_agent_table():
     """Saves the Q-learning agent's table if the agent exists."""
@@ -65,6 +71,41 @@ def save_agent_table():
 
 # Register the save function to be called on exit
 atexit.register(save_agent_table)
+
+def initialize_stats_file():
+    """Creates the CSV stats file and writes the header if it doesn't exist."""
+    if not os.path.exists(STATS_FILENAME):
+        try:
+            with open(STATS_FILENAME, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Epoch", "Epsilon", "States", "AvgScore", "BestScore", "TotalDeaths"])
+            print(f"Created statistics file: {STATS_FILENAME}")
+        except Exception as e:
+            print(f"Error creating statistics file {STATS_FILENAME}: {e}")
+
+def save_stats_to_csv():
+    """Appends the current agent statistics to the CSV file."""
+    global epoch_count, agent
+    if not agent:
+        print("Agent not available, cannot save stats.")
+        return
+        
+    stats = [
+        epoch_count,
+        f"{agent.epsilon:.5f}", # Format epsilon for readability
+        len(agent.q_table),
+        f"{agent.avg_score:.2f}", # Format average score
+        agent.best_score,
+        agent.total_deaths
+    ]
+    
+    try:
+        with open(STATS_FILENAME, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(stats)
+        print(f"Epoch {epoch_count}: Saved stats to {STATS_FILENAME}")
+    except Exception as e:
+        print(f"Error writing stats to {STATS_FILENAME}: {e}")
 
 def update():
     global state, game, high_score, agent, epoch_count
@@ -80,7 +121,7 @@ def update():
 
     if key_just_pressed(pygame.K_EQUALS): # Increase speed (using EQUALS for +)
         if game:
-            game.speed_multiplier = min(MAX_SPEED_MULTIPLIER, game.speed_multiplier + 1)
+            game.speed_multiplier = min(MAX_SPEED_MULTIPLIER, game.speed_multiplier + 50)
             print(f"Game Speed: {game.speed_multiplier}x")
 
     if key_just_pressed(pygame.K_MINUS): # Decrease speed
@@ -135,7 +176,13 @@ def update():
 
             # Update agent statistics
             if state == State.AUTO and game.agent:
+                # Stats are updated here using the final score
                 game.agent.update_stats(current_score, is_death=True)
+                
+                # Decay epsilon at the end of an episode
+                if game.agent.epsilon > game.agent.epsilon_min:
+                    game.agent.epsilon *= game.agent.epsilon_decay
+                    print(f"Decayed epsilon to: {game.agent.epsilon:.5f}")
 
             print(f"Game Over! Score: {current_score}, High Score: {high_score}")
             # Optionally save Q-table upon game over
@@ -146,6 +193,11 @@ def update():
             # Instead of Game Over screen, let's restart automatically in AUTO mode for training
             print("Restarting game in AUTO mode...")
             epoch_count += 1 # Increment epoch counter
+            
+            # Check if it's time to save stats
+            if epoch_count % STATS_SAVE_INTERVAL == 0:
+                save_stats_to_csv()
+                
             # Store current speed before resetting game
             current_speed = game.speed_multiplier if game else 1
             
@@ -282,8 +334,9 @@ except:
     # If an error occurs, just ignore it
     pass
 
-# Initialize agent and load high score
+# Initialize agent, stats file, and load high score
 initialize_agent() 
+initialize_stats_file() # Create stats file if needed
 load_high_score()
 state = State.MENU
 

@@ -37,38 +37,17 @@ class Eagle(MyActor):
     def __init__(self, pos):
         super().__init__("eagles", pos)
         self.children.append(MyActor("eagle", (0, -32)))
-        self.base_speed = 12  # Store the base speed
 
     def update(self):
-        # Import game here to avoid circular imports
-        from game import game
-        
-        # Get speed multiplier for eagle movement
-        speed_multiplier = game.speed_multiplier if hasattr(game, 'speed_multiplier') else 1
-        
-        # Apply speed multiplier to eagle movement
-        actual_speed = self.base_speed * speed_multiplier
-        self.y += actual_speed
+        self.y += 12
 
 class Mover(MyActor):
     def __init__(self, dx, image, pos):
         super().__init__(image, pos)
         self.dx = dx
-        self.base_dx = dx  # Store the original dx value
 
     def update(self):
-        # Note: The game.py update already temporarily modifies dx for all objects
-        # This is a backup in case any Mover objects are updated outside of game.update
-        from game import game
-        
-        # Get the speed multiplier if available
-        speed_multiplier = game.speed_multiplier if hasattr(game, 'speed_multiplier') else 1
-        
-        # Use base_dx to calculate the current frame's movement
-        # This avoids compounding the multiplier effect if update is called multiple times
-        actual_dx = self.base_dx * speed_multiplier
-        
-        self.x += actual_dx
+        self.x += self.dx
 
 class Car(Mover):
     SOUND_ZOOM = 0

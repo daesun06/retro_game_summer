@@ -16,7 +16,7 @@ from constants import (WIDTH, DX, DY, DIRECTION_UP, DIRECTION_RIGHT,
 
 
 class QLearningAgent:
-    def __init__(self, actions):
+    def __init__(self, actions, batch_size=32):
         self.actions = actions
         self.alpha = ALPHA
         self.gamma = GAMMA
@@ -42,13 +42,28 @@ class QLearningAgent:
         # Enhanced learning
         self.experience_buffer = []  # For potential experience replay
         self.max_buffer_size = 10000
+        self.batch_size = batch_size # Store batch size
 
     def load_q_table(self):
         if os.path.exists(Q_TABLE_FILE):
             try:
                 with open(Q_TABLE_FILE, 'rb') as f:
-                    q_table = pickle.load(f)
-                    print(f"Loaded Q-table with {len(q_table)} states.")
+                    # Load the saved data (expecting a dictionary)
+                    saved_data = pickle.load(f)
+                    
+                    # Check if it's the new format (dictionary) or old format (just q_table)
+                    if isinstance(saved_data, dict) and 'q_table' in saved_data and 'epsilon' in saved_data:
+                        q_table = saved_data['q_table']
+                        loaded_epsilon = saved_data['epsilon']
+                        print(f"Loaded Q-table with {len(q_table)} states and Epsilon: {loaded_epsilon:.5f}")
+                        # Update the agent's epsilon with the loaded value
+                        self.epsilon = loaded_epsilon 
+                    else:
+                        # Handle old format (just the Q-table) for backward compatibility
+                        q_table = saved_data 
+                        print(f"Loaded Q-table (old format) with {len(q_table)} states. Epsilon reset to START.")
+                        # Epsilon will remain at EPSILON_START as initialized
+                        
                     # Ensure it's a defaultdict for compatibility
                     return defaultdict(lambda: {action: 0.0 for action in self.actions}, q_table)
             except Exception as e:
@@ -61,9 +76,13 @@ class QLearningAgent:
     def save_q_table(self):
         try:
             with open(Q_TABLE_FILE, 'wb') as f:
-                # Convert back to regular dict for pickling if needed, though defaultdict should pickle fine
-                pickle.dump(dict(self.q_table), f) 
-                print(f"Saved Q-table with {len(self.q_table)} states.")
+                # Create a dictionary containing both the Q-table and the current epsilon
+                data_to_save = {
+                    'q_table': dict(self.q_table), # Convert defaultdict to dict for saving
+                    'epsilon': self.epsilon
+                }
+                pickle.dump(data_to_save, f) 
+                print(f"Saved Q-table with {len(self.q_table)} states and Epsilon: {self.epsilon:.5f}")
         except Exception as e:
             print(f"Error saving Q-table: {e}")
             
@@ -102,150 +121,119 @@ class QLearningAgent:
 
     def get_state(self, player, game):
         """
-        Calculates a discrete state representation based on the player and game environment.
+        Calculates a discrete state representation using quantized distances to nearest obstacles.
         Args:
             player: The Bunner instance.
             game: The Game instance.
         Returns:
             A tuple representing the discrete state, or None if state is invalid.
         """
-        # Constants for state discretization
-        X_BINS = 10  # Increased horizontal bins for more granularity
-        VIEW_DISTANCE_X = 80 # How far left/right to check for obstacles
-        VIEW_DISTANCE_Y = player.MOVE_DISTANCE * 2 # How far ahead/behind to check (e.g., 2 rows)
-        OBSTACLE_PROXIMITY_THRESHOLD = 30 # Closer than this is considered immediate danger
-        
+        # --- Constants & Setup ---
+        X_BINS = 10  
+        VIEW_DISTANCE_X = 80 
         player_x = player.x
         player_y = player.y
-        player_width_half = 16 # Assuming player is ~32px wide
+        player_width_half = 16 
 
-        # Find player's current row and nearby rows
+        # --- Find Relevant Rows ---
         current_row = None
         next_row = None
         prev_row = None
-        rows_in_view = {} # Store rows by their Y coordinate for quick lookup
         target_y_up = player_y + DY[DIRECTION_UP] * player.MOVE_DISTANCE
         target_y_down = player_y + DY[DIRECTION_DOWN] * player.MOVE_DISTANCE
 
-        for i, row in enumerate(game.rows):
-            rows_in_view[row.y] = row
+        for row in game.rows:
             if row.y == player_y:
                 current_row = row
             elif row.y == target_y_up:
                 next_row = row
             elif row.y == target_y_down:
-                 prev_row = row # Row player would move to if going DOWN
+                 prev_row = row 
         
         if current_row is None:
-            return None # Invalid state if not on a row
+            return None 
 
         current_row_type = type(current_row).__name__
         next_row_type = type(next_row).__name__ if next_row else 'None'
-        # prev_row_type = type(prev_row).__name__ if prev_row else 'None' # Optionally add previous row type
 
-        # --- Obstacle Detection --- 
-        danger_close_left = False
-        danger_close_right = False
-        danger_far_left = False
-        danger_far_right = False
-        danger_behind = False # Danger on the row behind (if moving back)
-        danger_landing_zone = False # Direct overlap on landing spot (moving UP)
-        danger_landing_zone_sides = False # Danger near landing spot (moving UP)
-        obstacle_moving_towards_left = False # Obstacle on current row moving left nearby
-        obstacle_moving_towards_right = False # Obstacle on current row moving right nearby
+        # --- Obstacle Proximity Calculation --- 
+        
+        # Distance Quantization Bins (Lower value = closer/more dangerous)
+        # Bin 0: Very Close / Overlap (within ~35px center-to-center for typical obstacles)
+        # Bin 1: Close (35px to 60px)
+        # Bin 2: Medium (60px to VIEW_DISTANCE_X=80px)
+        # Bin 3: Far / None (>= VIEW_DISTANCE_X)
+        DIST_BINS = [35, 60, VIEW_DISTANCE_X]
+        DEFAULT_DIST_BIN = len(DIST_BINS) # Bin 3 for Far/None
 
-        # Helper to check obstacle proximity
-        def check_obstacles(row, check_y):
-            nonlocal danger_close_left, danger_close_right, danger_far_left, danger_far_right
-            nonlocal obstacle_moving_towards_left, obstacle_moving_towards_right
-            if row and hasattr(row, 'children'):
-                for obs in row.children:
-                    obs_x = obs.pos[0]
-                    obs_width_half = getattr(obs, 'width', 32) / 2
-                    relative_x = obs_x - player_x
-                    distance_x = abs(relative_x)
-                    overlap_threshold = player_width_half + obs_width_half
+        def quantize_distance(dist):
+            for i, threshold in enumerate(DIST_BINS):
+                if dist < threshold:
+                    return i
+            return DEFAULT_DIST_BIN
 
-                    # Check horizontal proximity relative to player on the *same row*
-                    if row.y == player_y:
-                        # Moving towards player?
-                        obs_dx = getattr(obs, 'dx', 0)
-                        if obs_dx < 0 and 0 < relative_x < VIEW_DISTANCE_X: # Moving left towards player from right
-                            obstacle_moving_towards_left = True
-                        if obs_dx > 0 and -VIEW_DISTANCE_X < relative_x < 0: # Moving right towards player from left
-                             obstacle_moving_towards_right = True
-                             
-                        # General proximity checks
-                        if 0 < relative_x < VIEW_DISTANCE_X: # Obstacle to the right
-                            danger_far_right = True
-                            if distance_x < overlap_threshold + OBSTACLE_PROXIMITY_THRESHOLD:
-                                 danger_close_right = True
-                        elif -VIEW_DISTANCE_X < relative_x <= 0: # Obstacle to the left (or overlapping)
-                            danger_far_left = True
-                            if distance_x < overlap_threshold + OBSTACLE_PROXIMITY_THRESHOLD:
-                                danger_close_left = True
+        # Initialize distances to maximum / furthest bin
+        dist_left_bin = DEFAULT_DIST_BIN
+        dist_right_bin = DEFAULT_DIST_BIN
+        dist_ahead_bin = DEFAULT_DIST_BIN
+        dist_behind_bin = DEFAULT_DIST_BIN
 
-        # Check current row
-        check_obstacles(current_row, player_y)
+        min_dist_left = float('inf')
+        min_dist_right = float('inf')
+        min_dist_ahead = float('inf')
+        min_dist_behind = float('inf')
 
-        # Check row behind (where player might move if going DOWN)
+        # Check Current Row (Left/Right)
+        if current_row and hasattr(current_row, 'children'):
+            for obs in current_row.children:
+                obs_x = obs.pos[0]
+                relative_x = obs_x - player_x
+                dist_x = abs(relative_x)
+                
+                # Check distance based on centers for quantization
+                if 0 < relative_x < VIEW_DISTANCE_X: # Obstacle to the right
+                    min_dist_right = min(min_dist_right, dist_x)
+                elif -VIEW_DISTANCE_X < relative_x <= 0: # Obstacle to the left (or overlap)
+                    min_dist_left = min(min_dist_left, dist_x)
+            
+            dist_left_bin = quantize_distance(min_dist_left)
+            dist_right_bin = quantize_distance(min_dist_right)
+
+        # Check Next Row (Ahead)
+        if next_row and hasattr(next_row, 'children'):
+            landing_x = player_x # Assume moving UP doesn't change x
+            for obs in next_row.children:
+                obs_x = obs.pos[0]
+                relative_x_landing = obs_x - landing_x
+                dist_x_landing = abs(relative_x_landing)
+                min_dist_ahead = min(min_dist_ahead, dist_x_landing)
+            dist_ahead_bin = quantize_distance(min_dist_ahead)
+
+        # Check Previous Row (Behind)
         if prev_row and hasattr(prev_row, 'children'):
              target_x_down = player_x + DX[DIRECTION_DOWN] * player.MOVE_DISTANCE
              for obs in prev_row.children:
                  obs_x = obs.pos[0]
-                 obs_width_half = getattr(obs, 'width', 32) / 2
-                 # Check if moving DOWN would land on an obstacle
-                 if abs(obs_x - target_x_down) < (player_width_half + obs_width_half):
-                     danger_behind = True
-                     break
-
-        # Check next row (landing zone for moving UP)
-        if next_row and hasattr(next_row, 'children'):
-            landing_x = player_x + DX[DIRECTION_UP] * player.MOVE_DISTANCE # Should be same as player_x
-            landing_zone_width = player_width_half * 2 # Approximate width needed
-            for obs in next_row.children:
-                obs_x = obs.pos[0]
-                obs_width_half = getattr(obs, 'width', 32) / 2
-                relative_x_landing = obs_x - landing_x
-                distance_x_landing = abs(relative_x_landing)
-                overlap_threshold = player_width_half + obs_width_half
-
-                # Check direct overlap
-                if distance_x_landing < overlap_threshold:
-                    danger_landing_zone = True
-                
-                # Check proximity to the sides of the landing zone
-                if overlap_threshold <= distance_x_landing < overlap_threshold + VIEW_DISTANCE_X / 2: # Check slightly wider than overlap
-                    danger_landing_zone_sides = True
-                    
-                # No need to check further if both flags are true
-                if danger_landing_zone and danger_landing_zone_sides:
-                    break
+                 relative_x_behind = obs_x - target_x_down
+                 dist_x_behind = abs(relative_x_behind)
+                 min_dist_behind = min(min_dist_behind, dist_x_behind)
+             dist_behind_bin = quantize_distance(min_dist_behind)
 
         # --- Discretize State Components --- 
         player_x_bin = min(int(player_x / (WIDTH / X_BINS)), X_BINS - 1)
-        # Maybe add player's jump cooldown state?
-        # on_cooldown = player.jump_cooldown > 0
+        on_cooldown = player.jump_cooldown > 0 
                     
-        # State tuple - ensures hashability
+        # --- Final State Tuple --- 
         state = (
-            player_x_bin,
-            current_row_type,
-            next_row_type,
-            # Current row dangers:
-            danger_close_left,
-            danger_close_right,
-            danger_far_left, # Maybe combine close/far later if state space too large
-            danger_far_right,
-            obstacle_moving_towards_left, 
-            obstacle_moving_towards_right,
-            # Next row dangers (landing zone):
-            danger_landing_zone,
-            danger_landing_zone_sides,
-            # Prev row danger:
-            danger_behind,
-            # Cooldown status? 
-            # on_cooldown 
+            player_x_bin,          # Horizontal position bin (0-9)
+            current_row_type,      # Type of current row (String)
+            next_row_type,         # Type of row ahead (String)
+            on_cooldown,           # Action cooldown active? (Bool)
+            # Quantized distances (0=Closest, 3=Farthest/None)
+            dist_left_bin,         # Nearest obstacle left (current row)
+            dist_right_bin,        # Nearest obstacle right (current row)
+            dist_ahead_bin,        # Nearest obstacle ahead (next row)
+            dist_behind_bin,       # Nearest obstacle behind (prev row)
         )
         return state
 
@@ -271,34 +259,61 @@ class QLearningAgent:
             
         return action
 
-    def learn(self, state, action, reward, next_state):
-        """Updates the Q-table using the Q-learning rule."""
+    def learn(self, state, action, reward, next_state, done):
+        """Updates the Q-table using the Q-learning rule with experience replay."""
         if state is None or next_state is None:
             return # Cannot learn from invalid states
 
-        # Store experience for potential replay
-        self.experience_buffer.append((state, action, reward, next_state))
+        # Store experience
+        self.experience_buffer.append((state, action, reward, next_state, done))
         if len(self.experience_buffer) > self.max_buffer_size:
-            self.experience_buffer.pop(0)
+            self.experience_buffer.pop(0) # Remove oldest experience
+
+        # Only start learning after buffer has enough samples
+        if len(self.experience_buffer) < self.batch_size:
+            return
+
+        # Sample a random batch from the buffer
+        batch = self.random.sample(self.experience_buffer, self.batch_size)
+
+        # Update Q-values for each sample in the batch
+        for s, a, r, ns, d in batch:
+            # Q-learning update rule:
+            # Q(s, a) = Q(s, a) + alpha * (reward + gamma * max(Q(s', a')) - Q(s, a))
             
-        # Q-learning update rule:
-        # Q(s, a) = Q(s, a) + alpha * (reward + gamma * max(Q(s', a')) - Q(s, a))
-        
-        # Best Q-value for the next state
-        next_q_values = self.q_table[next_state]
-        max_next_q = 0.0
-        if next_q_values: # Ensure next_state has entries
-             max_next_q = max(next_q_values.values())
+            # Best Q-value for the next state (ns)
+            next_q_values = self.q_table[ns]
+            max_next_q = 0.0
+            if next_q_values: # Ensure next_state has entries
+                max_next_q = max(next_q_values.values())
 
-        # Current Q-value
-        current_q = self.q_table[state][action]
+            # Current Q-value
+            current_q = self.q_table[s][a]
 
-        # Update Q-value
-        new_q = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
-        self.q_table[state][action] = new_q
+            # Calculate target Q-value
+            # If the episode ended (done=True), the future reward is just the immediate reward
+            target_q = r if d else r + self.gamma * max_next_q
+
+            # Update Q-value
+            new_q = current_q + self.alpha * (target_q - current_q)
+            self.q_table[s][a] = new_q
         
-        # Check if player died and update stats
-        from states import PlayerState
-        if reward <= -500:  # Large negative reward indicates death
-            self.update_stats(0, is_death=True)
+        # Update overall agent statistics if the original transition was terminal
+        if done:
+            # Infer score from reward - THIS IS A GUESS, needs adjustment based on actual reward structure
+            # Assuming positive reward contributes to score, and large negative means death (score 0)
+            final_score = 0 # Default score if died
+            # We need a way to know the *actual* final score of the episode. 
+            # The reward passed here might just be the final step's reward.
+            # This update_stats logic might need to move to where the episode truly ends in main.py
+            if reward > -500: # Crude check if not death reward
+                 # Cannot determine score solely from final reward 'r'.
+                 # Pass the actual score to update_stats from the main loop instead.
+                 pass # Remove this update_stats call from here
+            else: # Died
+                self.update_stats(0, is_death=True) # Update stats with score 0 if died
+
+        # Decay epsilon (consider moving this to the end of an episode instead of every step)
+        # if self.epsilon > self.epsilon_min:
+        #     self.epsilon *= self.epsilon_decay
         
