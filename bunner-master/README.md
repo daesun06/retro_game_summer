@@ -20,3 +20,10 @@ Add auto mode for the game in which, the algoritm determines in which direction 
 # Leetcode challenges
 
 1) https://leetcode.com/problems/two-sum/description/ Complete the task with brute force then use dictionary.
+
+# Until next weekend
+
+1) Reduce road number to maximum 2.
+2) Upgrade road logic to ensure bunner never dies .
+3) Upgrade train avoidance logic to wait for train arrival.
+4) Every time bunner dies save number of steps and number of iteration to txt file.
