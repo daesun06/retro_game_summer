@@ -10,4 +10,6 @@ class State(Enum):
     MENU = 1
     MANUAL = 2
     GAME_OVER = 3
-    AUTO = 4 
+    AUTO = 4
+    AUTO_QLEARN = 5
+    AUTO_DQN = 6 

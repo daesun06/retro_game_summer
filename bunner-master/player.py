@@ -4,6 +4,7 @@ from constants import WIDTH, DX, DY, DIRECTION_WAIT, HEIGHT, DIRECTION_UP, DIREC
 from actors import Eagle
 import pygame
 from utils import key_just_pressed
+from dqn_agent import DQNAgent # Import DQNAgent
 
 # Q-learning related imports - We'll get agent from game object
 # from q_learning import QLearningAgent 
@@ -29,6 +30,8 @@ class Bunner(MyActor):
         self.last_action_for_learning = None
         self.prev_y = self.y # Store y before the last action
         self.current_action_str = "N/A" # For displaying current action
+        # Add flag to store if the *previous* frame's move attempt failed
+        self.attempted_invalid_move_last_frame = False
 
     def handle_input(self, dir):
         from game import game # Import game here to avoid circular imports
@@ -68,6 +71,7 @@ class Bunner(MyActor):
                          progress_made, new_record, attempted_invalid_move):
         """
         Calculates the reward based on the outcome of the last action.
+        Prioritizes Survival: Small bonus per step alive, reduced penalties for safe moves.
         Args:
             action_resulted_in_death (bool): True if the player died as a result of the last action.
             action_was_wait (bool): True if the last action was WAIT.
@@ -79,30 +83,33 @@ class Bunner(MyActor):
         Returns:
             float: The calculated reward value.
         """
-        DEATH_PENALTY = -1000  # Significantly increased penalty for death
-        FORWARD_REWARD = 60    # Major reward for moving forward and setting a new record (Increased)
-        PROGRESS_REWARD = 15   # Solid reward for any upward movement (Increased)
-        TIME_PENALTY = -0.5    # Increased penalty per step to encourage efficiency
-        WAIT_PENALTY = -2      # Higher penalty for waiting (doing nothing) (Decreased)
-        SIDEWAYS_PENALTY = -1  # Moderate penalty for sideways movement (Decreased)
-        BACKWARDS_PENALTY = -20 # Severe penalty for moving backwards
-        INVALID_MOVE_PENALTY = -10 # Serious penalty for attempting invalid moves
+        # --- Survival-Focused Rewards --- 
+        DEATH_PENALTY = -1000.0  # Keep extremely high
+        SURVIVAL_BONUS = 0.1    # Small reward for each step survived
+        FORWARD_REWARD = 20.0    # Reduced reward for forward progress (still good, but less emphasis)
+        PROGRESS_REWARD = 5.0    # Reduced reward for any upward movement
+        # TIME_PENALTY = -0.1    # Optional: Very small time penalty, or remove completely
+        WAIT_PENALTY = 0.0       # No penalty for waiting (might be strategic)
+        SIDEWAYS_PENALTY = 0.0   # No penalty for sideways movement (might be strategic)
+        BACKWARDS_PENALTY = -20.0 # Keep high penalty for moving backwards
+        INVALID_MOVE_PENALTY = -10.0 # Keep penalty for attempting invalid moves
 
         if action_resulted_in_death:
             return DEATH_PENALTY
 
-        reward = TIME_PENALTY # Start with time penalty
+        # Start with survival bonus instead of time penalty
+        reward = SURVIVAL_BONUS
 
         if new_record:
-            reward += FORWARD_REWARD # Significant bonus for new record
+            reward += FORWARD_REWARD # Bonus for new record
         elif progress_made: # Moved forward but not a new record
              reward += PROGRESS_REWARD
         elif action_moved_backwards:
              reward += BACKWARDS_PENALTY
         elif action_moved_sideways:
-             reward += SIDEWAYS_PENALTY
+             reward += SIDEWAYS_PENALTY # Now 0
         elif action_was_wait:
-             reward += WAIT_PENALTY
+             reward += WAIT_PENALTY # Now 0
         elif attempted_invalid_move:
              reward += INVALID_MOVE_PENALTY
 
@@ -112,19 +119,25 @@ class Bunner(MyActor):
         from game import game # Import game locally
         from main import state as game_mode, State # Import game mode (MANUAL/AUTO)
         
-        agent = game.agent # Get the Q-learning agent from the game object
+        agent = game.agent # Get the current agent from the game object
         
         # Variable to store if the last attempted move was invalid
-        last_move_was_invalid = False 
+        last_move_was_invalid = False # This needs to be tracked across frames ideally
 
         # --- Store state BEFORE action/update ---
         y_before_update = self.y
         min_y_before_update = self.min_y
         state_before_update = self.state 
 
-        # --- Q-Learning Step (Learn from the PREVIOUS action's outcome) ---
-        # This must happen *before* the next action is chosen, using the result of the last S,A pair.
-        if game_mode == State.AUTO and self.last_state_for_learning is not None and agent is not None:
+        # --- Learning Step (Learn from the PREVIOUS action's outcome) ---
+        # Check if we are in an agent-controlled mode and have necessary history
+        is_agent_mode = (game_mode == State.AUTO_QLEARN or game_mode == State.AUTO_DQN)
+
+        # --- Get Invalid Move Flag from Previous Frame ---
+        # We need the result of the move attempt associated with last_state_for_learning
+        invalid_move_from_previous_frame = self.attempted_invalid_move_last_frame
+
+        if is_agent_mode and self.last_state_for_learning is not None and agent is not None:
             # Determine the outcome of the previous action (which led to the current state)
             action_resulted_in_death = (state_before_update != PlayerState.ALIVE)
             progress_made = (y_before_update < self.prev_y) # Compare current y with y *before* the last action
@@ -133,10 +146,9 @@ class Bunner(MyActor):
             action_moved_sideways = (self.last_action_for_learning == DIRECTION_LEFT or self.last_action_for_learning == DIRECTION_RIGHT) and not progress_made and y_before_update == self.prev_y
             action_moved_backwards = (self.last_action_for_learning == DIRECTION_DOWN) and (y_before_update > self.prev_y)
             # We need info about whether the *previous* action attempt failed.
-            # This requires storing the success/failure status from the previous frame's handle_input call.
-            # Let's approximate this for now by checking if a move action was taken but y didn't change appropriately.
-            # A better approach would be to store the return value of handle_input from the previous step.
-            # We'll pass `last_move_was_invalid` which we set *after* handle_input below.
+            # last_move_was_invalid from *this* frame is not correct here.
+            # For now, we pass False, as tracking across frames isn't implemented.
+            attempted_invalid_move = invalid_move_from_previous_frame
             
             # Calculate reward based on the outcome
             reward = self.calculate_reward(
@@ -146,28 +158,52 @@ class Bunner(MyActor):
                 action_moved_backwards,
                 progress_made, 
                 new_record,
-                last_move_was_invalid # Pass the result from the *previous* frame's attempt
+                attempted_invalid_move # Pass the result from the *previous* frame's attempt
             )
             
             # Get the current state S' (after the last action resolved)
-            current_state_features = agent.get_state(self, game)
+            current_state_features = agent.get_state(self, game) # This is S' for the (S,A,R,S') tuple
 
             # Learn from the experience (S, A, R, S', Done)
-            agent.learn(self.last_state_for_learning, self.last_action_for_learning, reward, current_state_features, action_resulted_in_death)
+            # S = self.last_state_for_learning (state before action A was taken)
+            # A = self.last_action_for_learning (action taken)
+            # R = reward (calculated above based on outcome)
+            # S'= current_state_features (state after action A resolved)
+            # Done = action_resulted_in_death
+            
+            # For DQN, S and S' need to be tensors. `last_state_for_learning` should store the tensor.
+            # `current_state_features` from agent.get_state() should return a tensor for DQN.
+            state_to_learn_from = self.last_state_for_learning
+            action_learned = self.last_action_for_learning
+            
+            # Ensure the agent's learn method handles potential None states
+            # The learn method in both agents should already do this
+            if isinstance(agent, DQNAgent):
+                # DQNAgent expects learn() with no args, using memory buffer
+                # It needs the transition pushed to memory earlier
+                # Let's push to memory here, just before potentially calling learn()
+                # Note: Pushing requires state, action, next_state, reward, done
+                # Ensure state_to_learn_from and current_state_features are valid tensors
+                if state_to_learn_from is not None and current_state_features is not None: 
+                    agent.memory.push(state_to_learn_from, action_learned, current_state_features, reward, action_resulted_in_death)
+                    agent.learn() # DQN learns from batch sampled from memory
+                # else: 
+                    # print("Skipping DQN push/learn due to None state.") # Debug
+            else: # Assuming QLearningAgent
+                 agent.learn(state_to_learn_from, action_learned, reward, current_state_features, action_resulted_in_death)
 
             # If player died, reset the learning state variables for the next episode
             if action_resulted_in_death:
                 self.last_state_for_learning = None
                 self.last_action_for_learning = None
-                # print("Player died, resetting learning state.")
-            
-            # Important: Only update prev_y *after* using it for reward calculation for the previous step
-            # We'll update it before the *next* action is taken below.
-
+            # Else, the current state becomes the starting state for the *next* cycle
+            # This is handled below where last_state_for_learning is updated after choosing the *next* action.
 
         # --- Handle Input / AI Action Selection (Choose action for the CURRENT step) ---
         is_ready_for_action = (self.timer == 0 and self.jump_cooldown == 0 and self.state == PlayerState.ALIVE)
         action_to_take = None
+        move_attempted_this_frame = False
+        move_succeeded_this_frame = True # Assume success unless attempted and failed
 
         if is_ready_for_action:
             if game_mode == State.MANUAL:
@@ -177,7 +213,7 @@ class Bunner(MyActor):
                 self.last_state_for_learning = None
                 self.last_action_for_learning = None
 
-            elif game_mode == State.AUTO:
+            elif is_agent_mode: # Covers AUTO_QLEARN and AUTO_DQN
                  if agent is not None:
                      # Get current state S for decision making
                      current_state_features = agent.get_state(self, game)
@@ -186,27 +222,22 @@ class Bunner(MyActor):
                          # Choose action A based on state S
                          action_to_take = agent.choose_action(current_state_features)
                          
-                         # Store S and A to be used in the *next* learning step (after this action executes)
-                         self.last_state_for_learning = current_state_features
-                         self.last_action_for_learning = action_to_take
-                         # print(f"Q-Learn State: {current_state_features}, Action Chosen: {action_to_take}")
+                         # Store S (current_state_features) and A (action_to_take)
+                         # to be used in the *next* learning step (after this action executes).
+                         self.last_state_for_learning = current_state_features # Store S (potentially tensor)
+                         self.last_action_for_learning = action_to_take       # Store A
                      else:
                           # Handle invalid state - maybe wait or random?
                           action_to_take = DIRECTION_WAIT 
                           self.last_state_for_learning = None # Cannot learn from this
                           self.last_action_for_learning = None
-                          # print("Q-Learn: Invalid state detected, choosing WAIT.")
                  else:
                      action_to_take = DIRECTION_WAIT # Agent not available
                      self.current_action_str = "N/A" # Reset action string if no agent
-                     # print("Q-Learn: Agent not found, choosing WAIT.")
 
         # --- Execute Chosen Action ---
-        move_attempted = False
-        move_succeeded = True # Assume success unless move attempted and failed
         if action_to_take is not None:
             # --- Action String Update ---
-            # Map the chosen action to a string for display
             action_map = { 
                 DIRECTION_UP: "UP", DIRECTION_DOWN: "DOWN", 
                 DIRECTION_LEFT: "LEFT", DIRECTION_RIGHT: "RIGHT", 
@@ -220,18 +251,17 @@ class Bunner(MyActor):
             if action_to_take == DIRECTION_WAIT:
                 self.timer = WAIT_TIME # Stay idle
                 self.jump_cooldown = self.WAIT_COOLDOWN # Shorter cooldown
-                # print("Action: WAIT")
             else:
                 # Attempt movement action
-                move_succeeded = self.handle_input(action_to_take)
-                move_attempted = True
+                move_succeeded_this_frame = self.handle_input(action_to_take)
+                move_attempted_this_frame = True
                 # Set the standard jump cooldown regardless of whether move succeeded
-                # Agent needs to learn not to attempt invalid moves
                 self.jump_cooldown = self.JUMP_COOLDOWN
-                # print(f"Action: {action_to_take}, Succeeded: {move_succeeded}, Timer: {self.timer}")
 
-        # Store if the move attempted THIS frame was invalid, for the NEXT frame's reward calculation
-        last_move_was_invalid = move_attempted and not move_succeeded
+        # Store if the move attempted THIS frame was invalid. This state is needed for the *next* frame's reward calc.
+        # We set `self.attempted_invalid_move_last_frame` here based on the outcome of THIS frame's attempt.
+        # This value will be read at the START of the NEXT update() call.
+        self.attempted_invalid_move_last_frame = move_attempted_this_frame and not move_succeeded_this_frame
 
         # --- Manual Input Queueing (Always allow queueing) ---
         if key_just_pressed(pygame.K_UP): self.input_queue.append(DIRECTION_UP)
