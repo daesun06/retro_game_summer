@@ -6,11 +6,6 @@ import random
 import os
 import pickle
 from collections import deque, namedtuple
-import numpy as np
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, clone_model, load_model
-from tensorflow.keras.layers import Dense, Flatten, Input, Conv2D, MaxPooling2D
-from tensorflow.keras.optimizers import Adam
 
 # Import necessary game constants/functions if needed (similar to q_learning.py)
 from constants import (
@@ -24,45 +19,6 @@ print(f"Using device: {device}")
 
 # Define the structure for experiences stored in the replay memory
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'done'))
-
-# Learning Hyperparameters
-ALPHA = 0.001  # Learning rate
-EPSILON_DECAY_RATE = 0.99999  # Slower decay - explore a bit longer
-MIN_EPSILON = 0.01 # Original: 0.001 - Keep slightly more exploration
-# Replay Memory
-MEMORY_CAPACITY = 50000 # Size of the replay buffer
-BATCH_SIZE = 64        # Number of experiences sampled from memory for each learning step
-# Target Network Update
-TARGET_UPDATE_FREQUENCY = 1000 # New: Update target network every N steps
-
-# State Representation (Grid Size)
-GRID_SIZE = 5 # Defines the NxN grid around the player (must be odd)
-# Note: Input shape will be (GRID_SIZE, GRID_SIZE, NUM_TILE_TYPES) if using one-hot
-# Or (GRID_SIZE, GRID_SIZE, 1) if using integer encoding
-
-# --- Tile Type Encoding (Example - Adapt based on actual types in rows.py) ---
-# Option 1: Integer Encoding (Simpler input shape)
-TILE_ENCODING = {
-    "safe": 0, # e.g., SidewalkRow
-    "water": 1, # e.g., WaterRow (deadly without log)
-    "log": 2,   # e.g., Log object on WaterRow
-    "road": 3,  # e.g., RoadRow
-    "car": 4,   # e.g., Car object on RoadRow (deadly)
-    "obstacle": 5, # e.g., Bush on SidewalkRow
-    "player": 6, # Can optionally mark player's tile
-    "out_of_bounds": 7 # Tiles outside the game area visible in grid
-    # Add other types as needed
-}
-NUM_TILE_TYPES = len(TILE_ENCODING) # For one-hot encoding input shape if used
-
-# Option 2: One-Hot Encoding (Potentially better for NN, larger input)
-# Input shape: (GRID_SIZE, GRID_SIZE, NUM_TILE_TYPES)
-# Example: a 'safe' tile at [r,c] would be [1, 0, 0, 0, ...] at state[r, c]
-
-# --- Action Space ---
-# Matches constants.py directions + WAIT
-# DIRECTION_UP = 0, DIRECTION_RIGHT = 1, DIRECTION_DOWN = 2, DIRECTION_LEFT = 3, DIRECTION_WAIT = 4
-NUM_ACTIONS = 5
 
 class ReplayMemory:
     """A cyclic buffer of bounded size that holds the transitions observed recently."""
@@ -78,32 +34,6 @@ class ReplayMemory:
 
     def __len__(self):
         return len(self.memory)
-
-    # --- Added Save/Load Functionality ---
-    def save_memory(self, file_path="replay_memory.pkl"):
-        """Saves the replay memory deque to a file using pickle."""
-        try:
-            with open(file_path, 'wb') as f:
-                pickle.dump(self.memory, f, pickle.HIGHEST_PROTOCOL)
-            # print(f"Replay memory saved to {file_path}")
-        except Exception as e:
-            print(f"Error saving replay memory: {e}")
-
-    def load_memory(self, file_path="replay_memory.pkl"):
-        """Loads the replay memory deque from a file."""
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, 'rb') as f:
-                    self.memory = pickle.load(f)
-                # print(f"Replay memory loaded from {file_path}")
-                # Ensure the loaded memory respects the capacity
-                while len(self.memory) > self.memory.maxlen:
-                     self.memory.popleft() # Remove oldest if loaded memory exceeds capacity
-            except Exception as e:
-                print(f"Error loading replay memory: {e}, starting fresh.")
-                # Keep the initialized empty deque
-        else:
-            print("No replay memory file found, starting fresh.")
 
 class DQN(nn.Module):
     def __init__(self, n_observations, n_actions):

@@ -30,8 +30,6 @@ class Bunner(MyActor):
         self.last_action_for_learning = None
         self.prev_y = self.y # Store y before the last action
         self.current_action_str = "N/A" # For displaying current action
-        # Add flag to store if the *previous* frame's move attempt failed
-        self.attempted_invalid_move_last_frame = False
 
     def handle_input(self, dir):
         from game import game # Import game here to avoid circular imports
@@ -132,11 +130,6 @@ class Bunner(MyActor):
         # --- Learning Step (Learn from the PREVIOUS action's outcome) ---
         # Check if we are in an agent-controlled mode and have necessary history
         is_agent_mode = (game_mode == State.AUTO_QLEARN or game_mode == State.AUTO_DQN)
-
-        # --- Get Invalid Move Flag from Previous Frame ---
-        # We need the result of the move attempt associated with last_state_for_learning
-        invalid_move_from_previous_frame = self.attempted_invalid_move_last_frame
-
         if is_agent_mode and self.last_state_for_learning is not None and agent is not None:
             # Determine the outcome of the previous action (which led to the current state)
             action_resulted_in_death = (state_before_update != PlayerState.ALIVE)
@@ -148,7 +141,7 @@ class Bunner(MyActor):
             # We need info about whether the *previous* action attempt failed.
             # last_move_was_invalid from *this* frame is not correct here.
             # For now, we pass False, as tracking across frames isn't implemented.
-            attempted_invalid_move = invalid_move_from_previous_frame
+            attempted_invalid_move = False # Placeholder - needs proper tracking
             
             # Calculate reward based on the outcome
             reward = self.calculate_reward(
@@ -259,9 +252,10 @@ class Bunner(MyActor):
                 self.jump_cooldown = self.JUMP_COOLDOWN
 
         # Store if the move attempted THIS frame was invalid. This state is needed for the *next* frame's reward calc.
-        # We set `self.attempted_invalid_move_last_frame` here based on the outcome of THIS frame's attempt.
-        # This value will be read at the START of the NEXT update() call.
-        self.attempted_invalid_move_last_frame = move_attempted_this_frame and not move_succeeded_this_frame
+        # This is tricky. The `last_move_was_invalid` variable check in the learning step needs the value
+        # from the *previous* frame. Let's add an instance variable to store this.
+        # We set `self._last_move_invalid` here, and read it at the START of the *next* update cycle.
+        self._last_move_invalid_internal = move_attempted_this_frame and not move_succeeded_this_frame
 
         # --- Manual Input Queueing (Always allow queueing) ---
         if key_just_pressed(pygame.K_UP): self.input_queue.append(DIRECTION_UP)
