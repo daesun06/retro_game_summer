@@ -1,6 +1,7 @@
 from actors import MyActor
 from states import PlayerState
 from constants import WIDTH, DX, DY, DIRECTION_WAIT, HEIGHT, DIRECTION_UP, DIRECTION_RIGHT, DIRECTION_DOWN, DIRECTION_LEFT, WAIT_TIME
+from rows import Grass, Road, Dirt, Pavement
 from actors import Eagle
 import pygame
 from utils import key_just_pressed
@@ -63,6 +64,121 @@ class Bunner(MyActor):
              # print(f"Prevented move: Target row at y={target_y} not found")
         
         return False # Indicate move failed
+    
+    def _ai_decide(self, current_row, next_row):
+        direction = None
+        
+        if isinstance(next_row, Grass):
+            direction = 0
+            
+            
+        if isinstance(current_row, Grass):
+            if self.x > WIDTH / 2:
+                direction = 3 
+            elif self.x < WIDTH / 2:
+                direction = 1
+            else:
+                direction = 0
+            
+        def _ai_decide(self, current_row, next_row):
+            direction = None
+            
+            if isinstance(next_row, Grass):
+                direction = 0
+                
+                
+            if isinstance(current_row, Grass):
+                if self.x > WIDTH / 2:
+                    direction = 3 
+                elif self.x < WIDTH / 2:
+                    direction = 1
+                else:
+                    direction = 0
+                
+            if isinstance(next_row, Road): 
+            # 1. Check if there are cars on the row 
+            # 2. check if distance from a car to player is safe if yes move forward
+            # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
+                if len(next_row.children) == 0:
+                    direction = 0
+                
+                else:    
+                    for rowindex in range(len(next_row.children)):
+                        object_pos = next_row.children[rowindex].pos
+                        object_x = object_pos[0]
+                        next_car = next_row.children[rowindex]
+                    
+                        if abs(self.x - object_x) > 90:
+                            direction = 0
+                        elif next_car.dx == 1 and abs(self.x - object_x) < 75 :#and abs(self.x - current_object_x) > 50: 
+                            direction = 3
+                        elif next_car.dx == -1 and abs(self.x - object_x) < 75 :#and abs(self.x - current_object_x) > 50:
+                            direction = 1
+                        elif next_car.dx == -1 and self.x > object_x and abs(self.x - object_x) < 75:
+                            direction = 0
+                        elif next_car.dx == 1 and self.x < object_x and abs(self.x - object_x) < 75:
+                            direction = 0
+                        elif len(next_row.children) == 0:
+                            direction = 0
+                        elif self.y > 750:
+                            direction = 4
+                        else:
+                            direction = 4
+                            
+                        for currentrowindex in range(len(current_row.children)):
+                            current_object_pos = current_row.children[currentrowindex].pos
+                            current_object_x = current_object_pos[0]
+                            current_car = current_row.children[currentrowindex]
+                            
+                            if abs(self.x - current_object_x) < 90:
+                                if current_car.dx == 1:
+                                    direction = 1
+                                if current_car.dx == -1:
+                                    direction = 3  
+                            if len(current_row.children) == 0:
+                                direction = 0
+
+            # if isinstance(next_row, Rail):
+            #     if len(next_row.children) == 0:
+            #         direction = 0
+            #     else:
+            #         direction = 4
+            #         self.jump_cooldown = 10
+            #         direction = 0
+                
+                # if Rail.train_incoming:
+                #     jump_cooldown += 150
+                #     direction = 0
+                # else:
+                #     direction = 0
+                
+                
+                # if Rail.index.update.index == 1:
+                #     direction = 0
+                # else:
+                #     direction = 4
+
+                
+                
+            if isinstance(next_row, Pavement):
+                direction = 0
+                
+            if isinstance(current_row, Pavement):
+                if self.x > WIDTH / 2:
+                    direction = 3 
+                elif self.x < WIDTH / 2:
+                    direction = 1
+                else:
+                    direction = 0
+                
+            if isinstance(next_row, Dirt):
+                direction = 0
+                
+            if direction is None:
+                direction = 0
+
+            return direction
+
 
     def calculate_reward(self, action_resulted_in_death, action_was_wait, 
                          action_moved_sideways, action_moved_backwards, 
@@ -262,6 +378,17 @@ class Bunner(MyActor):
         if key_just_pressed(pygame.K_RIGHT): self.input_queue.append(DIRECTION_RIGHT)
         if key_just_pressed(pygame.K_DOWN): self.input_queue.append(DIRECTION_DOWN)
         if key_just_pressed(pygame.K_LEFT): self.input_queue.append(DIRECTION_LEFT)
+        
+        if self.state == State.AUTO:        
+                if self.timer == 0 and self.jump_cooldown == 0:
+                    try:
+                        dir = self._ai_decide(current_row, next_row)
+                        if dir != DIRECTION_WAIT:
+                            self.handle_input(dir)  
+                            self.jump_cooldown = self.JUMP_COOLDOWN
+                        
+                    except Exception as exp:
+                        print(exp)
         
         # --- Update Cooldowns ---
         if self.jump_cooldown > 0:

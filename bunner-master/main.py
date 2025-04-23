@@ -48,7 +48,8 @@ ALL_ACTIONS = [DIRECTION_UP, DIRECTION_RIGHT, DIRECTION_DOWN, DIRECTION_LEFT, DI
 
 MAX_SPEED_MULTIPLIER = 200
 TARGET_FPS = 60 # Base FPS
-STATS_FILENAME = "training_stats.csv" # File to save stats (might need agent-specific files later)
+STATS_Q_FILENAME = "training_stats_q.csv" # File to save stats (might need agent-specific files later)
+STATS_D_FILENAME = 'training_stats.csv'
 STATS_SAVE_INTERVAL = 20 # How often to save stats (in epochs)
 
 def load_high_score():
@@ -92,15 +93,27 @@ atexit.register(save_agents)
 def initialize_stats_file():
     """Creates the CSV stats file and writes the header if it doesn't exist."""
     # TODO: Consider agent-specific stat files if needed
-    if not os.path.exists(STATS_FILENAME):
-        try:
-            with open(STATS_FILENAME, 'w', newline='') as f:
-                writer = csv.writer(f)
-                # Add agent type column
-                writer.writerow(["Epoch", "AgentType", "Epsilon", "States/Steps", "AvgScore", "BestScore", "TotalDeaths"])
-            print(f"Created statistics file: {STATS_FILENAME}")
-        except Exception as e:
-            print(f"Error creating statistics file {STATS_FILENAME}: {e}")
+    if state == State.AUTO_QLEARN:
+        if not os.path.exists(STATS_Q_FILENAME):
+            try:
+                with open(STATS_Q_FILENAME, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    # Add agent type column
+                    writer.writerow(["Epoch", "AgentType", "Epsilon", "States/Steps", "AvgScore", "BestScore", "TotalDeaths"])
+                print(f"Created statistics file: {STATS_Q_FILENAME}")
+            except Exception as e:
+                print(f"Error creating statistics file {STATS_Q_FILENAME}: {e}")    
+    
+    elif state == State.AUTO_DQN:
+        if not os.path.exists(STATS_D_FILENAME):
+            try:
+                with open(STATS_D_FILENAME, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    # Add agent type column
+                    writer.writerow(["Epoch", "AgentType", "Epsilon", "States/Steps", "AvgScore", "BestScore", "TotalDeaths"])
+                print(f"Created statistics file: {STATS_D_FILENAME}")
+            except Exception as e:
+                print(f"Error creating statistics file {STATS_D_FILENAME}: {e}")
 
 def save_stats_to_csv():
     """Appends the current active agent's statistics to the CSV file."""
@@ -130,19 +143,30 @@ def save_stats_to_csv():
         active_agent.best_score,
         active_agent.total_deaths
     ]
-    
-    try:
-        # Ensure file exists and has header (redundant check, but safe)
-        if not os.path.exists(STATS_FILENAME):
-            initialize_stats_file()
-            
-        with open(STATS_FILENAME, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(stats)
-        # print(f"Epoch {epoch_count}: Saved {agent_type} stats to {STATS_FILENAME}") # Reduce noise
-    except Exception as e:
-        print(f"Error writing stats to {STATS_FILENAME}: {e}")
-
+    if state == State.AUTO_QLEARN:
+        try:
+            # Ensure file exists and has header (redundant check, but safe)
+            if not os.path.exists(STATS_Q_FILENAME):
+                initialize_stats_file()
+                
+            with open(STATS_Q_FILENAME, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(stats)
+            # print(f"Epoch {epoch_count}: Saved {agent_type} stats to {STATS_FILENAME}") # Reduce noise
+        except Exception as e:
+            print(f"Error writing stats to {STATS_Q_FILENAME}: {e}")
+    elif state == State.AUTO_DQN:
+        try:
+            # Ensure file exists and has header (redundant check, but safe)
+            if not os.path.exists(STATS_D_FILENAME):
+                initialize_stats_file()
+                
+            with open(STATS_D_FILENAME, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(stats)
+            # print(f"Epoch {epoch_count}: Saved {agent_type} stats to {STATS_D_FILENAME}") # Reduce noise
+        except Exception as e:
+            print(f"Error writing stats to {STATS_D_FILENAME}: {e}")
 def update():
     global state, game, high_score, active_agent, q_agent, dqn_agent, epoch_count
     
@@ -160,7 +184,7 @@ def update():
 
     if key_just_pressed(pygame.K_MINUS): # Decrease speed
          if game:
-            game.speed_multiplier = max(1, game.speed_multiplier - 1)
+            game.speed_multiplier = max(1, game.speed_multiplier - 10)
             print(f"Game Speed: {game.speed_multiplier}x")
 
     # --- State-specific updates and mode switching ---
@@ -174,6 +198,14 @@ def update():
             game = Game(Bunner((WIDTH // 2, -320)))
             game.agent = None # No agent in manual
             print("Starting MANUAL mode")
+            
+        elif key_just_pressed(pygame.K_a):
+            state = State.AUTO
+            active_agent = None
+            game = Game(Bunner((WIDTH // 2, -320)))
+            game.agent = None # No agent in manual
+            print("Starting AUTO mode (algorithm based)")
+
         elif key_just_pressed(pygame.K_q): # Start AUTO_QLEARN
             reset_all_random_generators()
             state = State.AUTO_QLEARN
@@ -182,6 +214,7 @@ def update():
             game.agent = active_agent
             if game.bunner: game.bunner.last_state_for_learning = None
             print("Starting AUTO mode (Q-Learning)")
+            
         elif key_just_pressed(pygame.K_n): # Start AUTO_DQN
             reset_all_random_generators()
             state = State.AUTO_DQN
@@ -194,7 +227,7 @@ def update():
             # Update menu animation only if no mode start key was pressed
             if game: game.update() # Update menu animation
 
-    elif state == State.MANUAL or state == State.AUTO_QLEARN or state == State.AUTO_DQN:
+    elif state == State.MANUAL or state == State.AUTO_QLEARN or state == State.AUTO_DQN or state == State.AUTO:
         # Handle SWITCHING keys during gameplay
         if key_just_pressed(pygame.K_p): # Switch to MANUAL mode
             if state != State.MANUAL:
@@ -229,6 +262,13 @@ def update():
                         game.bunner.last_action_for_learning = None
                 print("Switched to AUTO mode (DQN)")
             # else: print("Already in AUTO mode (DQN).") # Optional: feedback
+        
+        if key_just_pressed(pygame.K_a):
+            if state != State.AUTO:
+                state = State.AUTO
+                active_agent = None
+                if game: game.agent = None
+                print("Switched to AUTO mode (algorithm based)")
 
         # --- Game Logic (Update, Game Over Check) ---
         # Ensure game and bunner exist before proceeding
@@ -280,6 +320,10 @@ def update():
                     print("Restarting game in AUTO mode (DQN)...")
                     state = State.AUTO_DQN
                     active_agent = dqn_agent
+                elif previous_state == State.AUTO:
+                    print("Restarting game in AUTO mode (algorithm based)...")
+                    state = State.AUTO
+                    active_agent = None
                 else: # If game ended in MANUAL, restart in MANUAL
                     print("Restarting game in MANUAL mode...")
                     state = State.MANUAL
@@ -321,6 +365,7 @@ def draw():
         # Update menu text
         screen.draw.text("PRESS Q FOR Q-LEARN AUTO", ((WIDTH - 290) // 2, HEIGHT - 170))
         screen.draw.text("PRESS N FOR DQN AUTO", ((WIDTH - 250) // 2, HEIGHT - 140))
+        screen.draw.text("PRESS A FOR AUTO", ((WIDTH - 250) // 2, HEIGHT - 200))
         screen.draw.text("PRESS SPACE FOR MANUAL", ((WIDTH - 250) // 2, HEIGHT - 110))
         screen.draw.text("M: Mute | +/-: Speed | P: Manual", (10, HEIGHT - 30), fontsize=20, color="yellow")
 
@@ -329,7 +374,7 @@ def draw():
         display_number(screen, high_score, 1, WIDTH - 10, 1)
         
         # Display current mode and speed
-        mode_text = "MANUAL" if state == State.MANUAL else "AUTO Q-LEARN" if state == State.AUTO_QLEARN else "AUTO DQN"
+        mode_text = "MANUAL" if state == State.MANUAL else "AUTO Q-LEARN" if state == State.AUTO_QLEARN else "AUTO DQN" if state == State.AUTO_DQN else "AUTO MODE"
         speed_text = f"{game.speed_multiplier}x" if game else "1x"
         mute_text = "MUTED" if game and game.muted else ""
         status_line = f"Mode: {mode_text} | Speed: {speed_text} {mute_text}"
