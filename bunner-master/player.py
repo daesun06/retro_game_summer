@@ -66,6 +66,7 @@ class Bunner(MyActor):
         return False # Indicate move failed
     
     def _ai_decide(self, current_row, next_row):
+        from game import game # Import game locally
         direction = None
         
         if isinstance(next_row, Grass):
@@ -137,26 +138,6 @@ class Bunner(MyActor):
                                     direction = 3  
                             if len(current_row.children) == 0:
                                 direction = 0
-
-            # if isinstance(next_row, Rail):
-            #     if len(next_row.children) == 0:
-            #         direction = 0
-            #     else:
-            #         direction = 4
-            #         self.jump_cooldown = 10
-            #         direction = 0
-                
-                # if Rail.train_incoming:
-                #     jump_cooldown += 150
-                #     direction = 0
-                # else:
-                #     direction = 0
-                
-                
-                # if Rail.index.update.index == 1:
-                #     direction = 0
-                # else:
-                #     direction = 4
 
                 
                 
@@ -321,6 +302,28 @@ class Bunner(MyActor):
                 # Clear learning state when in manual mode
                 self.last_state_for_learning = None
                 self.last_action_for_learning = None
+                
+            elif game_mode == State.AUTO:
+            # Find current and next row
+                current_row = None
+                next_row = None
+                for i, row in enumerate(game.rows):
+                    if row.y == self.y:
+                        current_row = row
+                        # Try to get next row (row above current)
+                        if i > 0:  # Since rows are ordered bottom to top
+                            next_row = game.rows[i-1]
+                        break
+                    
+                if self.timer == 0 and self.jump_cooldown == 0:
+                    try:
+                        dir = self._ai_decide(current_row, next_row)
+                        if dir != DIRECTION_WAIT:
+                            self.handle_input(dir)  
+                            self.jump_cooldown = self.JUMP_COOLDOWN
+
+                    except Exception as exp:
+                        print(exp)
 
             elif is_agent_mode: # Covers AUTO_QLEARN and AUTO_DQN
                  if agent is not None:

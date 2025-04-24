@@ -4,6 +4,7 @@ from actors import Eagle
 from constants import HEIGHT, ROW_HEIGHT, RANDOM_SEED
 from rows import Grass, Road, Row
 
+
 # Create a deterministic random generator if a seed is provided
 rand_generator = random.Random(RANDOM_SEED)
 
@@ -34,7 +35,7 @@ class Game:
             if bunner:
                 music.set_volume(0.4)
             else:
-                music.play("result")
+                music.play("result.ogg")
                 music.set_volume(0.4)
         except:
             pass
