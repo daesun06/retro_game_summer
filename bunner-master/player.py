@@ -83,9 +83,9 @@ class Bunner(MyActor):
                 direction = 0
             
         if isinstance(next_row, Road): 
-        # 1. Check if there are cars on the row 
-        # 2. check if distance from a car to player is safe if yes move forward
-        # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
+           # 1. Check if there are cars on the row 
+           # 2. check if distance from a car to player is safe if yes move forward
+           # 3. if not safe, either do nothing or pick next safe direction. Next safe direction means either left, right, forward or backwoard from current posithion where there are no obstacles/enemies. 
             if len(next_row.children) == 0:
                 direction = 0
             
@@ -126,6 +126,19 @@ class Bunner(MyActor):
                             direction = 0
 
             
+            # if Rail.train_incoming:
+            #     jump_cooldown += 150
+            #     direction = 0
+            # else:
+            #     direction = 0
+            
+            
+            # if Rail.index.update.index == 1:
+            #     direction = 0
+            # else:
+            #     direction = 4
+
+            
             
         if isinstance(next_row, Pavement):
             direction = 0
@@ -145,7 +158,6 @@ class Bunner(MyActor):
             direction = 0
 
         return direction
-
 
     def calculate_reward(self, action_resulted_in_death, action_was_wait, 
                          action_moved_sideways, action_moved_backwards, 
