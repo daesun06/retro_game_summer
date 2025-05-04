@@ -27,6 +27,9 @@ class QLearningAgent:
         # Use defaultdict for convenient Q-table initialization
         self.q_table = self.load_q_table()
         
+        # Track state visits for optimistic learning rates
+        self.state_visits = {}
+        
         # Set a deterministic random seed for reproducible learning
         self.random = random.Random(RANDOM_SEED)
         print(f"QLearningAgent initialized with random seed: {RANDOM_SEED}")
@@ -242,6 +245,15 @@ class QLearningAgent:
         if state is None: # Handle invalid states
              return self.random.choice(self.actions) # Default random action
              
+        # Add occasional exploration burst to escape local maxima
+        if self.total_steps % 100 == 0 and len(self.scores_history) > 10:
+            recent_max = max(self.scores_history[-10:])
+            if recent_max < 0.5 * self.best_score and self.best_score > 30:
+                # If we're stuck in a local maximum, temporarily increase exploration
+                exploration_boost = 0.2
+                if self.random.uniform(0, 1) < exploration_boost:
+                    return self.random.choice(self.actions)
+        
         if self.random.uniform(0, 1) < self.epsilon:
             # Explore: choose a random action
             action = self.random.choice(self.actions)
@@ -278,7 +290,7 @@ class QLearningAgent:
 
         # Update Q-values for each sample in the batch
         for s, a, r, ns, d in batch:
-            # Q-learning update rule:
+            # Enhanced Q-learning update rule with optimistic initialization
             # Q(s, a) = Q(s, a) + alpha * (reward + gamma * max(Q(s', a')) - Q(s, a))
             
             # Best Q-value for the next state (ns)
@@ -294,26 +306,25 @@ class QLearningAgent:
             # If the episode ended (done=True), the future reward is just the immediate reward
             target_q = r if d else r + self.gamma * max_next_q
 
-            # Update Q-value
-            new_q = current_q + self.alpha * (target_q - current_q)
+            # Update Q-value with dynamic learning rate
+            # Use a higher learning rate for states we haven't visited much
+            state_visit_count = self.state_visits.get(s, 0) + 1
+            self.state_visits[s] = state_visit_count
+            
+            # Adjust learning rate based on visit count (higher for less visited states)
+            adjusted_alpha = max(self.alpha, self.alpha * 5.0 / state_visit_count)
+            
+            # Update Q-value with the adjusted learning rate
+            new_q = current_q + adjusted_alpha * (target_q - current_q)
             self.q_table[s][a] = new_q
+            
+            # Add small random noise to Q-values to break symmetry
+            if state_visit_count < 10 and self.random.random() < 0.1:
+                exploration_noise = self.random.uniform(-0.1, 0.1)
+                self.q_table[s][a] += exploration_noise
         
         # Update overall agent statistics if the original transition was terminal
         if done:
-            # Infer score from reward - THIS IS A GUESS, needs adjustment based on actual reward structure
-            # Assuming positive reward contributes to score, and large negative means death (score 0)
-            final_score = 0 # Default score if died
-            # We need a way to know the *actual* final score of the episode. 
-            # The reward passed here might just be the final step's reward.
-            # This update_stats logic might need to move to where the episode truly ends in main.py
-            if reward > -500: # Crude check if not death reward
-                 # Cannot determine score solely from final reward 'r'.
-                 # Pass the actual score to update_stats from the main loop instead.
-                 pass # Remove this update_stats call from here
-            else: # Died
-                self.update_stats(0, is_death=True) # Update stats with score 0 if died
-
-        # Decay epsilon (consider moving this to the end of an episode instead of every step)
-        # if self.epsilon > self.epsilon_min:
-        #     self.epsilon *= self.epsilon_decay
+            # This update_stats call should be handled by the main game loop
+            pass
         

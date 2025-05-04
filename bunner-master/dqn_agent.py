@@ -10,7 +10,8 @@ from collections import deque, namedtuple
 # Import necessary game constants/functions if needed (similar to q_learning.py)
 from constants import (
     WIDTH, HEIGHT, DIRECTION_UP, DIRECTION_RIGHT, DIRECTION_DOWN, DIRECTION_LEFT, DIRECTION_WAIT,
-    GAMMA, EPSILON_START, EPSILON_DECAY, EPSILON_MIN, RANDOM_SEED, DX, DY
+    GAMMA, EPSILON_START, EPSILON_DECAY, EPSILON_MIN, RANDOM_SEED, DX, DY,
+    DQN_LEARNING_RATE, DQN_BATCH_SIZE, DQN_MEMORY_SIZE, DQN_TARGET_UPDATE, DQN_MODEL_FILE
 )
 
 # Check if CUDA is available and set the device
@@ -38,19 +39,33 @@ class ReplayMemory:
 class DQN(nn.Module):
     def __init__(self, n_observations, n_actions):
         super(DQN, self).__init__()
-        # Example simple network architecture
-        # Adjust layers based on the complexity of the state representation
-        self.layer1 = nn.Linear(n_observations, 128)
-        self.layer2 = nn.Linear(128, 128)
-        self.layer3 = nn.Linear(128, n_actions)
+        # Enhanced network architecture with more layers and neurons
+        self.layer1 = nn.Linear(n_observations, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.layer2 = nn.Linear(256, 256)
+        self.bn2 = nn.BatchNorm1d(256)
+        self.layer3 = nn.Linear(256, 128)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.layer4 = nn.Linear(128, n_actions)
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, x):
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        return self.layer3(x)
+        # Apply batch normalization during training, but not for single sample inference
+        if x.size(0) == 1:  # Single sample inference
+            x = F.relu(self.layer1(x))
+            x = F.relu(self.layer2(x))
+            x = F.relu(self.layer3(x))
+        else:  # Batch processing during training
+            x = F.relu(self.bn1(self.layer1(x)))
+            x = self.dropout(x)
+            x = F.relu(self.bn2(self.layer2(x)))
+            x = self.dropout(x)
+            x = F.relu(self.bn3(self.layer3(x)))
+        
+        return self.layer4(x)
 
 class DQNAgent:
-    def __init__(self, actions, state_size, batch_size=128, memory_size=10000, target_update=10):
+    def __init__(self, actions, state_size, batch_size=DQN_BATCH_SIZE, memory_size=DQN_MEMORY_SIZE, target_update=DQN_TARGET_UPDATE):
         self.actions = actions
         self.n_actions = len(actions)
         self.state_size = state_size # Dimensionality of the state input to the NN
@@ -69,7 +84,8 @@ class DQNAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval() # Target network is only for inference
 
-        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=1e-4, amsgrad=True)
+        # Using the hyperparameters from constants.py
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=DQN_LEARNING_RATE)
         self.memory = ReplayMemory(memory_size)
         
         # Performance tracking (similar to QLearningAgent)
@@ -79,9 +95,14 @@ class DQNAgent:
         self.total_deaths = 0
         self.total_steps = 0
         self.best_epoch = 0
+        
+        # Training stabilization
+        self.loss_history = []
+        self.reward_history = []
+        self.epsilon_adjustment_frequency = 100  # Check to adjust epsilon every N steps
 
         # Load model if exists
-        self.model_file = 'dqn_model.pth'
+        self.model_file = DQN_MODEL_FILE
         
         # Define known row types for one-hot encoding
         self.known_row_types = ['Grass', 'Road', 'Rail', 'Water', 'Pavement', 'Dirt', 'None']
@@ -254,7 +275,12 @@ class DQNAgent:
         
         # Decay epsilon
         if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay # Decay epsilon over time
+            self.epsilon *= self.epsilon_decay
+            
+        # Add noise to exploration to escape local maxima
+        if self.steps_done % 500 == 0 and self.avg_score < 30:
+            # If we're stuck in low scores, occasionally boost exploration
+            eps_threshold = max(eps_threshold, 0.1)
             
         if sample > eps_threshold:
             with torch.no_grad():
@@ -306,10 +332,14 @@ class DQNAgent:
         next_state_values = torch.zeros(self.batch_size, device=device)
         if len(non_final_next_states_list) > 0:
             non_final_next_states = torch.cat(non_final_next_states_list)
-            # Use target_net for stability
-            next_state_q_values = self.target_net(non_final_next_states).max(1)[0].detach()
-            non_final_mask = torch.tensor(non_final_mask_list, dtype=torch.bool, device=device)
-            next_state_values[non_final_mask] = next_state_q_values
+            # Double DQN: Use policy_net to select action, target_net to evaluate it
+            with torch.no_grad():
+                # Select best actions using policy network
+                next_action_indices = self.policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
+                # Evaluate those actions using target network
+                next_state_action_values = self.target_net(non_final_next_states).gather(1, next_action_indices).squeeze(1)
+                non_final_mask = torch.tensor(non_final_mask_list, dtype=torch.bool, device=device)
+                next_state_values[non_final_mask] = next_state_action_values
             
         # Compute the expected Q values: reward + gamma * V(s_{t+1}) * (1 - done)
         # We multiply by (1 - done_batch) so that terminal states have a value of 0
@@ -318,18 +348,32 @@ class DQNAgent:
         # Compute Huber loss (or Smooth L1 loss)
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values, expected_state_action_values)
+        
+        # Track loss for adaptive learning
+        self.loss_history.append(loss.item())
+        if len(self.loss_history) > 100:
+            self.loss_history.pop(0)
 
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        # Gradient clipping (optional but often helpful)
-        # torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
+        # Gradient clipping to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
         self.optimizer.step()
 
         # Update target network periodically
         if self.steps_done % self.target_update == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
-            # print(f"Step {self.steps_done}: Updated target network.") # Debug
+            
+        # Adaptive epsilon adjustment
+        if self.steps_done % self.epsilon_adjustment_frequency == 0 and len(self.scores_history) > 10:
+            recent_scores = self.scores_history[-10:]
+            if max(recent_scores) == self.best_score and self.best_score > 100:
+                # If we're not improving but have a good best score, decrease epsilon to exploit more
+                self.epsilon = max(self.epsilon_min, self.epsilon * 0.9)
+            elif max(recent_scores) < 0.5 * self.best_score:
+                # If recent performance is significantly worse than best, increase exploration
+                self.epsilon = min(0.2, self.epsilon * 1.1)  # Boost exploration but cap it
             
     def update_stats(self, score, is_death=False):
         # Identical to QLearningAgent.update_stats
