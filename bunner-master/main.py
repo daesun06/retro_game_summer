@@ -155,10 +155,10 @@ def save_stats_to_csv():
             # print(f"Epoch {epoch_count}: Saved {agent_type} stats to {STATS_FILENAME}") # Reduce noise
         except Exception as e:
             print(f"Error writing stats to {STATS_Q_FILENAME}: {e}")
-        if epoch_count == 40:
+        if epoch_count == 10000:
             active_agent = None 
             state = State.MENU
-            print("Training completed after 5000 epochs. Returning to menu.")
+            print("Training completed after 10000 epochs. Returning to menu.")
             save_agents()  # Save final agent states
     elif state == State.AUTO_DQN:
         try:
@@ -172,10 +172,10 @@ def save_stats_to_csv():
             # print(f"Epoch {epoch_count}: Saved {agent_type} stats to {STATS_D_FILENAME}") # Reduce noise
         except Exception as e:
             print(f"Error writing stats to {STATS_D_FILENAME}: {e}")
-        if epoch_count == 40:
+        if epoch_count == 10000:
             active_agent = None 
             state = State.MENU
-            print("Training completed after 5000 epochs. Returning to menu.")
+            print("Training completed after 10000 epochs. Returning to menu.")
             save_agents()  # Save final agent states
             
     
