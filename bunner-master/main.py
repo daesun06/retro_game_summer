@@ -48,8 +48,8 @@ ALL_ACTIONS = [DIRECTION_UP, DIRECTION_RIGHT, DIRECTION_DOWN, DIRECTION_LEFT, DI
 
 MAX_SPEED_MULTIPLIER = 200
 TARGET_FPS = 60 # Base FPS
-STATS_Q_FILENAME = "training_stats_q.csv" # File to save stats (might need agent-specific files later)
-STATS_D_FILENAME = 'training_stats.csv'
+STATS_Q_FILENAME = "training_stats1.csv" # File to save stats (might need agent-specific files later)
+STATS_D_FILENAME = 'training_stats2.csv'
 STATS_SAVE_INTERVAL = 20 # How often to save stats (in epochs)
 
 def load_high_score():
@@ -376,10 +376,10 @@ def draw():
         start_frame = [0, 1, 2, 1][(game.scroll_pos // 6 % 4)] if game else 0
         screen.blit("start" + str(start_frame), ((WIDTH - 270) // 2, HEIGHT - 240))
         # Update menu text
-        screen.draw.text("PRESS Q FOR Q-LEARN AUTO", ((WIDTH - 290) // 2, HEIGHT - 170))
-        screen.draw.text("PRESS N FOR DQN AUTO", ((WIDTH - 250) // 2, HEIGHT - 140))
-        screen.draw.text("PRESS A FOR AUTO", ((WIDTH - 250) // 2, HEIGHT - 200))
-        screen.draw.text("PRESS SPACE FOR MANUAL", ((WIDTH - 250) // 2, HEIGHT - 110))
+        screen.draw.text("Press Q - For Q-LEARN AUTO", ((WIDTH - 300) // 2, HEIGHT - 170), color="light blue", gcolor="cyan", fontname="bahnschrift")
+        screen.draw.text("Press N - For DQN AUTO", ((WIDTH - 300) // 2, HEIGHT - 140), color="light blue", gcolor="cyan", fontname="bahnschrift")
+        screen.draw.text("Press A - For AUTO", ((WIDTH - 300) // 2, HEIGHT - 110), color="light blue", gcolor="cyan", fontname="bahnschrift")
+        screen.draw.text("Press SPACE - For MANUAL", ((WIDTH - 300) // 2, HEIGHT - 80), color="light blue", gcolor="cyan", fontname="bahnschrift")
         screen.draw.text("M: Mute | +/-: Speed | P: Manual", (10, HEIGHT - 30), fontsize=20, color="yellow")
 
     elif state == State.MANUAL or state == State.AUTO_QLEARN or state == State.AUTO_DQN:
