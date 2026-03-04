@@ -282,6 +282,13 @@ def update():
                 active_agent = None
                 if game: game.agent = None
                 print("Switched to AUTO mode (algorithm based)")
+                
+        if key_just_pressed(pygame.K_ESCAPE):
+            state = State.MENU
+            active_agent = None
+            if game: game.stop_looped_sounds()
+            game = Game() # New game for menu
+            print("Returned to MENU")
 
         # --- Game Logic (Update, Game Over Check) ---
         # Ensure game and bunner exist before proceeding

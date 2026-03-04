@@ -1,4 +1,5 @@
-Epoch,AgentType,Epsilon,States/Steps,AvgScore,BestScore,TotalDeaths20,DQN,0.95285,463,4.15,12,20
+Epoch,AgentType,Epsilon,States/Steps,AvgScore,BestScore,TotalDeaths
+20,DQN,0.95285,463,4.15,12,20
 20,DQN,0.97463,494,4.35,12,20
 40,DQN,0.95090,967,3.92,12,40
 60,DQN,0.92783,1438,3.77,12,60
